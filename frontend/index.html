@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sarah — Voice Assistant</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="assistant-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-pulse"></div>
+        <div>
+          <h1>Sarah</h1>
+          <span class="sub-brand">RN Voice Assistant</span>
+        </div>
+      </div>
+      <div class="header-badges">
+        <div class="stt-badge" id="stt-badge" title="High-accuracy Gemini Multimodal Audio speech recognition">
+          <span class="stt-icon">🎙️</span>
+          <span>STT: <strong id="stt-engine-name">Gemini Audio</strong></span>
+        </div>
+        <div class="accent-badge" title="Select your spoken accent model for optimal recognition">
+          <span>🗣️</span>
+          <select id="accent-select" class="accent-select" aria-label="Select accent">
+            <option value="en-LK" selected>Sri Lanka (en-LK)</option>
+            <option value="en-IN">India (en-IN)</option>
+            <option value="en-GB">UK (en-GB)</option>
+            <option value="en-US">US (en-US)</option>
+            <option value="en-AU">Australia (en-AU)</option>
+          </select>
+        </div>
+        <div class="wake-word-badge asleep" id="wake-badge" title="Say 'Sarah' (any pronunciation) to trigger">
+          <span class="wake-icon" id="wake-icon">💤</span>
+          <span id="wake-label">Standby: Greet <strong>"Sarah"</strong></span>
+          <span class="wake-timer-pill" id="wake-timer-pill" style="display: none;">5:00</span>
+        </div>
+        <div class="connection-badge" id="connection-badge">
+          <span class="badge-dot"></span>
+          <span class="badge-text" id="connection-text">Connecting...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Voice Section -->
+    <main class="main-card">
+      <!-- Status Indicator -->
+      <div class="status-panel">
+        <div class="status-orb" id="status-orb">
+          <div class="orb-core"></div>
+          <div class="orb-ring"></div>
+        </div>
+        <div class="status-label" id="status-indicator">Ready to listen</div>
+      </div>
+
+      <!-- Microphone Control -->
+      <div class="mic-section">
+        <button id="mic-btn" class="mic-button" aria-label="Microphone">
+          <svg class="mic-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+        <span class="mic-hint" id="mic-hint">Say "Sarah" or press the microphone</span>
+      </div>
+
+      <!-- Continuous Wake Word Mode Toggle -->
+      <div class="wake-toggle-container">
+        <label class="toggle-label">
+          <input type="checkbox" id="wake-toggle" checked />
+          <span class="toggle-slider"></span>
+          <span class="toggle-text">Continuous "Sarah" Detection</span>
+        </label>
+      </div>
+
+      <!-- Live Transcript Field -->
+      <div class="transcript-box">
+        <div class="transcript-header">
+          <span>Live Transcript</span>
+          <span class="transcript-badge" id="transcript-state">Idle</span>
+        </div>
+        <p class="transcript-text" id="transcript">Listening for "Sarah" or click the microphone...</p>
+      </div>
+
+      <!-- Quick Action Chips -->
+      <div class="quick-chips">
+        <button type="button" class="chip" data-cmd="Sarah, what is the weather?">🌦️ Weather</button>
+        <button type="button" class="chip" data-cmd="Sarah, what time is it?">⏰ Time</button>
+        <button type="button" class="chip" data-cmd="Sarah, turn on the lights">💡 Turn on lights</button>
+        <button type="button" class="chip" data-cmd="Sarah, turn on room lights">🛋️ Room lights</button>
+        <button type="button" class="chip" data-cmd="Sarah, turn on kitchen lights">🍳 Kitchen lights</button>
+      </div>
+
+      <!-- Text Input Fallback / Testing -->
+      <form class="text-input-form" id="chat-form">
+        <input 
+          type="text" 
+          id="text-input" 
+          class="text-input" 
+          placeholder="Try: 'Sarah, what is the weather?' or 'Sarah, turn on room lights'..." 
+          autocomplete="off"
+        />
+        <button type="submit" id="send-btn" class="send-btn">Send</button>
+      </form>
+    </main>
+
+    <!-- Conversation History -->
+    <section class="history-card">
+      <div class="history-header">
+        <h2>Conversation History</h2>
+        <button type="button" id="clear-btn" class="clear-btn">Clear History</button>
+      </div>
+      <div class="conversation-feed" id="conversation-history">
+        <div class="message-card user">
+          <div class="sender-tag">User</div>
+          <div class="message-bubble">Sarah, what's the weather today?</div>
+        </div>
+        <div class="message-card assistant">
+          <div class="sender-tag">Sarah</div>
+          <div class="message-bubble">Right now, the weather is 24°C with partly cloudy skies.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="tts.js"></script>
+  <script src="speech.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
