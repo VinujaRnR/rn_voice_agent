@@ -24,20 +24,21 @@ class Settings(BaseSettings):
     # ==========================================
     # RabbitMQ Remote Broker Connection
     # ==========================================
+    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
     rabbitmq_host: Optional[str] = None
     rabbitmq_amqp_port: int = 5672
     rabbitmq_user: Optional[str] = None
     rabbitmq_password: Optional[str] = None
     rabbitmq_vhost: str = "/"
     rabbitmq_use_ssl: bool = False
-    rabbitmq_url: str = "amqp://guest:guest@localhost:5672/"
+    rabbitmq_timeout_seconds: int = 15
 
     # ==========================================
     # RabbitMQ Command Routing Configuration
     # ==========================================
-    rabbitmq_command_exchange: str = "iot_commands"
-    rabbitmq_command_queue: str = "iot_commands"
-    rabbitmq_command_routing_key: str = "iot.command"
+    rabbitmq_command_exchange: str = "rn.hub"
+    rabbitmq_command_queue: str = "commands"
+    rabbitmq_command_routing_key: str = "commands"
 
     # ==========================================
     # STT & Speech Configuration
@@ -52,6 +53,18 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
+
+    @property
+    def is_placeholder_broker(self) -> bool:
+        """Check if broker URL contains unpopulated template values."""
+        raw_url = (self.rabbitmq_url or "").lower()
+        placeholders = [
+            "broker_host",
+            "your-rabbitmq-host",
+            "user:password@broker_host",
+            "your-rabbitmq-user"
+        ]
+        return any(p in raw_url for p in placeholders)
 
     @model_validator(mode="after")
     def compute_rabbitmq_url(self):
