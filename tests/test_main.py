@@ -73,8 +73,8 @@ async def test_api_chat_device_command_flow():
     data = response.json()
     assert data["mode"] == "device_command"
     assert data["command"]["device_id"] == "98a316e6b658"
-    assert data["command"]["action"] == "set_power"
-    assert data["command"]["parameters"] == {"state": "on"}
+    assert (data["command"].get("actions") or data["command"].get("action")) == "set_power"
+    assert (data["command"].get("params") or data["command"].get("parameters")) == {"state": "on"}
 
 
 @pytest.mark.asyncio
@@ -84,3 +84,25 @@ async def test_frontend_served():
         response = await ac.get("/")
     assert response.status_code == 200
     assert "RN Voice Assistant" in response.text
+
+
+@pytest.mark.asyncio
+async def test_devices_page_served():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get("/devices.html")
+    assert response.status_code == 200
+    assert "Devices & Nodes Table" in response.text
+
+
+@pytest.mark.asyncio
+async def test_api_devices_endpoint():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        response = await ac.get("/api/devices")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["total_devices"] >= 1
+    assert data["total_nodes"] >= 1
+    assert len(data["devices"]) >= 1

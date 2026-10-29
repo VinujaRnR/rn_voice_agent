@@ -30,11 +30,16 @@ def get_device_status(device_id: str) -> Dict[str, Any]:
         }
 
     # Query device status reported by RN Hub
+    connected = device.get("connected_devices", [])
     return {
         "device_id": target_id,
         "name": device.get("name"),
+        "node_id": device.get("node_id"),
         "type": device.get("type"),
         "connection": device.get("connection"),
+        "location": device.get("location"),
+        "connected_devices": connected,
+        "connected_devices_count": device.get("connected_devices_count", len(connected)),
         "status": device.get("status", "online"),
         "online_status": device.get("online_status", "Reported by RN Hub"),
         "enrolled": device.get("enrolled", True),

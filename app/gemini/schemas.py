@@ -45,11 +45,88 @@ class DeviceParameters(BaseModel):
 
 
 class DeviceCommand(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    command_id: Optional[str] = Field(default=None, description="Unique command identifier")
     device_id: str = Field(..., description="Target device ID or hardware identifier")
-    action: str = Field(..., description="Action name, e.g., set_power, move, stop")
-    parameters: DeviceParameters = Field(
+    actions: str = Field(..., description="Action name, e.g., set_power, move, stop")
+    params: Optional[DeviceParameters] = Field(
         default_factory=DeviceParameters,
         description="Key-value parameters for the device action"
+    )
+    channel_key: Optional[str] = Field(default=None, description="Channel key identifier, e.g. relay:light_glow")
+    device_type: Optional[str] = Field(default=None, description="Device classification or sub-type")
+    device_number: Optional[int] = Field(default=None, description="Device channel or instance number")
+    device_name: Optional[str] = Field(default=None, description="Human friendly device name")
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_aliases_before(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Normalize actions/action
+            if "actions" not in data and "action" in data:
+                data["actions"] = data["action"]
+            data.pop("action", None)
+
+            # Normalize params/parameters
+            if "params" not in data and "parameters" in data:
+                p = data["parameters"]
+                data["params"] = p
+            data.pop("parameters", None)
+
+            p = data.get("params")
+            if isinstance(p, dict):
+                data["params"] = DeviceParameters(**p)
+            elif p is None:
+                data["params"] = DeviceParameters()
+        return data
+
+    @property
+    def action(self) -> str:
+        return self.actions
+
+    @action.setter
+    def action(self, val: str):
+        self.actions = val
+
+    @property
+    def parameters(self) -> Any:
+        return self.params
+
+    @parameters.setter
+    def parameters(self, val: Any):
+        if isinstance(val, dict):
+            self.params = DeviceParameters(**val)
+        else:
+            self.params = val
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "action":
+            return self.actions
+        if key == "parameters":
+            return self.params
+        return getattr(self, key, None)
+
+
+class ReminderSpec(BaseModel):
+    """Structured reminder representation generated through Gemini reasoning."""
+    model_config = ConfigDict(extra="ignore")
+
+    action_type: Literal["set", "list", "cancel"] = Field(
+        default="set",
+        description="Action type: 'set' a reminder, 'list' active reminders, or 'cancel' a reminder"
+    )
+    task: Optional[str] = Field(
+        default=None,
+        description="The clean task description to be reminded of (e.g. 'take your pills', 'turn off the oven')"
+    )
+    target_time: Optional[str] = Field(
+        default=None,
+        description="Target time if specified (e.g. '4:30 PM', '16:30', 'tomorrow at 9 AM')"
+    )
+    delay_minutes: Optional[float] = Field(
+        default=None,
+        description="Delay in minutes from current time (e.g. 10, 15, 1)"
     )
 
 
@@ -71,6 +148,10 @@ class GeminiResponse(BaseModel):
     missing_fields: List[str] = Field(
         default_factory=list,
         description="List of missing parameters if mode is clarify"
+    )
+    reminder: Optional[ReminderSpec] = Field(
+        default=None,
+        description="Structured reminder or schedule details reasoned by Sarah"
     )
 
     @model_validator(mode="after")

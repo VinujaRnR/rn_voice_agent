@@ -1,0 +1,97 @@
+{
+  "schema_version": "1.0",
+  "table_name": "devices",
+  "description": "Predefined IoT and hardware device data table for RN Hub and Voice Assistant",
+  "columns": [
+    "device_id",
+    "name",
+    "node_id",
+    "type",
+    "connection",
+    "connected_devices",
+    "connected_devices_count",
+    "allowed_actions",
+    "status",
+    "online_status",
+    "power_state",
+    "location",
+    "mac_address",
+    "enrolled",
+    "auth_token",
+    "aliases",
+    "scheduled_rules"
+  ],
+  "devices": [
+    {
+      "name": "Rn Hub",
+      "node_id": "NODE-ESP8266-02",
+      "type": "hub",
+      "connection": "WiFi",
+      "location": "Living Room",
+      "connected_devices": [
+        {
+          "device_id": "light_glow_1",
+          "name": "light_glow #1",
+          "type": "light_glow",
+          "channel_key": "relay:light_glow",
+          "device_type": "light_glow",
+          "device_number": 1,
+          "device_name": "light_glow #1",
+          "status": "online",
+          "aliases": [
+            "glow light",
+            "the glow light",
+            "glow light 1",
+            "glow light one",
+            "glow_light_1",
+            "glow lights",
+            "the glow lights",
+            "light 1",
+            "light one",
+            "light glow",
+            "light glow 1",
+            "light glow one",
+            "light_glow_1"
+          ]
+        }
+      ],
+      "actions": [
+        "LIGHT_ON",
+        "LIGHT_OFF"
+      ],
+      "params": {},
+      "allowed_actions": [
+        "LIGHT_ON",
+        "LIGHT_OFF"
+      ],
+      "status": "online",
+      "power_state": "off",
+      "aliases": [
+        "glow light",
+        "the glow light",
+        "glow light 1",
+        "glow_light_1",
+        "glow light one",
+        "glow lights",
+        "the glow lights",
+        "grow light",
+        "grow light 1",
+        "grow light one",
+        "light 1",
+        "light one",
+        "light glow",
+        "light glow 1",
+        "light glow one",
+        "light_glow_1",
+        "light_glow 1",
+        "rn hub"
+      ],
+      "mac_address": "34:17:eb:c3:b4:79",
+      "connected_devices_count": 1,
+      "online_status": "Reported by RN Hub",
+      "enrolled": true,
+      "id": "3417ebc3b479",
+      "device_id": "3417ebc3b479"
+    }
+  ]
+}

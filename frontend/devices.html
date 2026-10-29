@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sarah — Devices & Nodes Data Table</title>
+  <link rel="stylesheet" href="style.css?v=3.5">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* Critical layout and button alignment overrides */
+    body.devices-page {
+      display: block !important;
+      width: 100% !important;
+      min-height: 100vh !important;
+      padding: 24px 20px 48px !important;
+      margin: 0 !important;
+      background-color: #0a0d14 !important;
+      color: #f8fafc !important;
+      font-family: 'Outfit', sans-serif !important;
+      box-sizing: border-box !important;
+    }
+    .devices-container {
+      max-width: 1360px !important;
+      width: 100% !important;
+      margin: 0 auto !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 20px !important;
+      position: relative !important;
+    }
+    .stats-grid {
+      display: grid !important;
+      grid-template-columns: repeat(4, 1fr) !important;
+      gap: 16px !important;
+      width: 100% !important;
+    }
+    @media (max-width: 960px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+    }
+    @media (max-width: 520px) {
+      .stats-grid { grid-template-columns: 1fr !important; }
+    }
+    .stat-card {
+      position: relative !important;
+      background: rgba(14, 20, 36, 0.75) !important;
+      backdrop-filter: blur(20px) !important;
+      -webkit-backdrop-filter: blur(20px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      border-radius: 14px !important;
+      padding: 18px 20px !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 16px !important;
+      transition: all 0.25s ease !important;
+      overflow: hidden !important;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+    }
+    .stat-card::before {
+      content: "" !important;
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      height: 2px !important;
+    }
+    .stat-card:nth-child(1)::before { background: linear-gradient(90deg, #00f2fe, #4facfe) !important; }
+    .stat-card:nth-child(2)::before { background: linear-gradient(90deg, #a855f7, #c084fc) !important; }
+    .stat-card:nth-child(3)::before { background: linear-gradient(90deg, #10b981, #34d399) !important; }
+    .stat-card:nth-child(4)::before { background: linear-gradient(90deg, #f59e0b, #fbbf24) !important; }
+    .stat-icon {
+      font-size: 1.75rem !important;
+      background: rgba(255, 255, 255, 0.04) !important;
+      width: 52px !important;
+      height: 52px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      border-radius: 10px !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      flex-shrink: 0 !important;
+    }
+    .stat-val {
+      font-size: 1.9rem !important;
+      font-weight: 700 !important;
+      color: #fff !important;
+      line-height: 1.1 !important;
+      letter-spacing: -0.02em !important;
+    }
+    .stat-lbl {
+      font-size: 0.74rem !important;
+      color: #94a3b8 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.07em !important;
+      font-weight: 600 !important;
+      margin-top: 4px !important;
+    }
+    .toolbar-card {
+      background: rgba(14, 20, 36, 0.75) !important;
+      backdrop-filter: blur(20px) !important;
+      -webkit-backdrop-filter: blur(20px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      border-radius: 14px !important;
+      padding: 18px 22px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 14px !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    .search-input-wrapper {
+      position: relative !important;
+      display: flex !important;
+      align-items: center !important;
+      width: 100% !important;
+    }
+    .search-icon {
+      position: absolute !important;
+      left: 15px !important;
+      color: #64748b !important;
+      font-size: 1.05rem !important;
+      pointer-events: none !important;
+    }
+    .search-field {
+      width: 100% !important;
+      padding: 13px 16px 13px 44px !important;
+      background: rgba(6, 9, 18, 0.65) !important;
+      border: 1px solid rgba(255, 255, 255, 0.09) !important;
+      border-radius: 10px !important;
+      color: #fff !important;
+      font-family: inherit !important;
+      font-size: 0.92rem !important;
+      box-sizing: border-box !important;
+      transition: all 0.2s ease !important;
+    }
+    .search-field:focus {
+      outline: none !important;
+      border-color: #00f2fe !important;
+      background: rgba(6, 9, 18, 0.85) !important;
+      box-shadow: 0 0 0 3px rgba(0, 242, 254, 0.15) !important;
+    }
+    .filter-row {
+      display: flex !important;
+      flex-wrap: wrap !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      gap: 12px !important;
+      width: 100% !important;
+    }
+    .filter-pills {
+      display: flex !important;
+      flex-wrap: wrap !important;
+      gap: 8px !important;
+      align-items: center !important;
+    }
+    .filter-btn {
+      background: rgba(255, 255, 255, 0.04) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      border-radius: 9999px !important;
+      padding: 7px 16px !important;
+      font-size: 0.82rem !important;
+      font-family: inherit !important;
+      color: #94a3b8 !important;
+      cursor: pointer !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      font-weight: 500 !important;
+      transition: all 0.2s ease !important;
+      user-select: none !important;
+    }
+    .filter-btn:hover {
+      background: rgba(255, 255, 255, 0.08) !important;
+      color: #fff !important;
+      border-color: rgba(255, 255, 255, 0.16) !important;
+      transform: translateY(-1px) !important;
+    }
+    .filter-btn.active {
+      background: rgba(0, 242, 254, 0.14) !important;
+      border-color: rgba(0, 242, 254, 0.45) !important;
+      color: #00f2fe !important;
+      font-weight: 600 !important;
+      box-shadow: 0 0 14px rgba(0, 242, 254, 0.18) !important;
+    }
+    .filter-count-badge {
+      font-size: 0.7rem !important;
+      font-weight: 700 !important;
+      padding: 1px 7px !important;
+      border-radius: 9999px !important;
+      background: rgba(255, 255, 255, 0.08) !important;
+      color: #94a3b8 !important;
+      margin-left: 2px !important;
+    }
+    .filter-btn.active .filter-count-badge {
+      background: rgba(0, 242, 254, 0.25) !important;
+      color: #00f2fe !important;
+    }
+    .refresh-btn {
+      background: rgba(255, 255, 255, 0.04) !important;
+      border: 1px solid rgba(255, 255, 255, 0.09) !important;
+      color: #cbd5e1 !important;
+      border-radius: 10px !important;
+      padding: 9px 16px !important;
+      font-size: 0.84rem !important;
+      font-weight: 600 !important;
+      cursor: pointer !important;
+      font-family: inherit !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 6px !important;
+      transition: all 0.2s ease !important;
+    }
+    .refresh-btn:hover {
+      border-color: #00f2fe !important;
+      color: #00f2fe !important;
+      background: rgba(0, 242, 254, 0.08) !important;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #00f2fe, #4facfe) !important;
+      color: #04101e !important;
+      border: none !important;
+      border-radius: 10px !important;
+      padding: 9px 20px !important;
+      font-family: inherit !important;
+      font-size: 0.86rem !important;
+      font-weight: 700 !important;
+      cursor: pointer !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 8px !important;
+      transition: all 0.2s ease !important;
+      box-shadow: 0 0 18px rgba(0, 242, 254, 0.3) !important;
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px) !important;
+      box-shadow: 0 0 25px rgba(0, 242, 254, 0.5) !important;
+    }
+    .table-card {
+      background: rgba(14, 20, 36, 0.75) !important;
+      backdrop-filter: blur(20px) !important;
+      -webkit-backdrop-filter: blur(20px) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      border-radius: 18px !important;
+      overflow: hidden !important;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45) !important;
+      display: flex !important;
+      flex-direction: column !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    .devices-table {
+      width: 100% !important;
+      border-collapse: separate !important;
+      border-spacing: 0 !important;
+      font-size: 0.88rem !important;
+      text-align: left !important;
+    }
+    .devices-table th {
+      padding: 14px 18px !important;
+      background: rgba(8, 12, 22, 0.9) !important;
+      color: #94a3b8 !important;
+      font-size: 0.74rem !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.08em !important;
+      font-weight: 600 !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+      white-space: nowrap !important;
+    }
+    .devices-table td {
+      padding: 16px 18px !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+      vertical-align: middle !important;
+      color: #cbd5e1 !important;
+    }
+    .devices-table tbody tr:hover td {
+      background: rgba(0, 242, 254, 0.035) !important;
+    }
+    /* Cell column alignment overrides */
+    .devices-table th:nth-child(6), .devices-table td:nth-child(6) {
+      text-align: center !important;
+    }
+    .devices-table th:nth-child(7), .devices-table td:nth-child(7) {
+      text-align: center !important;
+    }
+    .devices-table th:nth-child(8), .devices-table td:nth-child(8) {
+      text-align: right !important;
+    }
+    .power-btn {
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 8px !important;
+      min-width: 86px !important;
+      padding: 7px 16px !important;
+      border-radius: 9999px !important;
+      font-family: inherit !important;
+      font-size: 0.8rem !important;
+      font-weight: 700 !important;
+      cursor: pointer !important;
+      transition: all 0.2s ease !important;
+      border: 1.5px solid transparent !important;
+      user-select: none !important;
+    }
+    .power-btn.on {
+      background: rgba(16, 185, 129, 0.18) !important;
+      border-color: #10b981 !important;
+      color: #34d399 !important;
+      box-shadow: 0 0 14px rgba(16, 185, 129, 0.25) !important;
+    }
+    .power-btn.off {
+      background: rgba(255, 255, 255, 0.04) !important;
+      border-color: rgba(255, 255, 255, 0.12) !important;
+      color: #94a3b8 !important;
+    }
+    .power-btn:hover {
+      transform: scale(1.05) !important;
+    }
+    .action-buttons-group {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: flex-end !important;
+      gap: 8px !important;
+      width: 100% !important;
+    }
+    .action-btn {
+      background: rgba(255, 255, 255, 0.04) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      border-radius: 8px !important;
+      padding: 6px 14px !important;
+      font-size: 0.78rem !important;
+      font-family: inherit !important;
+      font-weight: 600 !important;
+      cursor: pointer !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 5px !important;
+      transition: all 0.2s ease !important;
+      color: #cbd5e1 !important;
+      white-space: nowrap !important;
+    }
+    .action-btn.edit-btn {
+      background: rgba(56, 189, 248, 0.12) !important;
+      border-color: rgba(56, 189, 248, 0.35) !important;
+      color: #38bdf8 !important;
+    }
+    .action-btn.edit-btn:hover {
+      background: rgba(56, 189, 248, 0.25) !important;
+      border-color: #38bdf8 !important;
+      box-shadow: 0 0 14px rgba(56, 189, 248, 0.3) !important;
+      transform: translateY(-1px) !important;
+    }
+    .action-btn.delete-btn {
+      background: rgba(244, 63, 94, 0.12) !important;
+      border-color: rgba(244, 63, 94, 0.35) !important;
+      color: #fb7185 !important;
+    }
+    .action-btn.delete-btn:hover {
+      background: rgba(244, 63, 94, 0.25) !important;
+      border-color: #fb7185 !important;
+      box-shadow: 0 0 14px rgba(244, 63, 94, 0.3) !important;
+      transform: translateY(-1px) !important;
+    }
+    /* Modal isolation */
+    .modal-overlay {
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      background: rgba(4, 7, 15, 0.85) !important;
+      backdrop-filter: blur(16px) !important;
+      -webkit-backdrop-filter: blur(16px) !important;
+      display: none !important;
+      align-items: center !important;
+      justify-content: center !important;
+      z-index: 99999 !important;
+      padding: 20px !important;
+      box-sizing: border-box !important;
+    }
+    .modal-overlay.active {
+      display: flex !important;
+    }
+  </style>
+</head>
+<body class="devices-page">
+  <div class="devices-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="brand-pulse"></div>
+        <div>
+          <h1>Sarah</h1>
+          <span class="sub-brand">RN Hardware & Device Network</span>
+        </div>
+      </div>
+      <div class="header-badges">
+        <div class="stt-badge" title="RN Hub Hardware Gateway">
+          <span class="stt-icon">⚡</span>
+          <span>Protocol: <strong>RabbitMQ + AMQP</strong></span>
+        </div>
+        <div class="connection-badge" id="connection-badge">
+          <span class="badge-dot"></span>
+          <span class="badge-text" id="connection-text">Connecting...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Navigation Bar -->
+    <nav class="nav-bar">
+      <a href="index.html" class="nav-link">
+        <span>🎙️ Voice Assistant</span>
+      </a>
+      <a href="devices.html" class="nav-link active">
+        <span>🌐 Devices & Nodes Table</span>
+        <span class="nav-badge" id="nav-badge-count">...</span>
+      </a>
+    </nav>
+
+    <!-- Stats Overview Cards -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">📟</div>
+        <div>
+          <div class="stat-val" id="stat-total-devices">0</div>
+          <div class="stat-lbl">Registered Devices</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🖧</div>
+        <div>
+          <div class="stat-val" id="stat-total-nodes">0</div>
+          <div class="stat-lbl">Hardware Nodes</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">💡</div>
+        <div>
+          <div class="stat-val" id="stat-connected-sub">0</div>
+          <div class="stat-lbl">Connected Sub-Devices</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🟢</div>
+        <div>
+          <div class="stat-val" id="stat-online-devices">0</div>
+          <div class="stat-lbl">Online Devices</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Toolbar: Search & Category Filter -->
+    <section class="toolbar-card">
+      <div class="search-input-wrapper">
+        <span class="search-icon">🔍</span>
+        <input 
+          type="text" 
+          id="search-input" 
+          class="search-field" 
+          placeholder="Filter by name, Node ID (e.g. NODE-ESP8266-01), location, or sub-device..." 
+        />
+      </div>
+      <div class="filter-row">
+        <div class="filter-pills" id="filter-pills">
+          <button type="button" class="filter-btn active" data-category="all">
+            <span>All</span> <span class="filter-count-badge">...</span>
+          </button>
+          <button type="button" class="filter-btn" data-category="hub">
+            <span>Hubs</span> <span class="filter-count-badge">...</span>
+          </button>
+          <button type="button" class="filter-btn" data-category="relay">
+            <span>Relays</span> <span class="filter-count-badge">...</span>
+          </button>
+          <button type="button" class="filter-btn" data-category="lighting">
+            <span>Lighting</span> <span class="filter-count-badge">...</span>
+          </button>
+          <button type="button" class="filter-btn" data-category="robot">
+            <span>Robots</span> <span class="filter-count-badge">...</span>
+          </button>
+          <button type="button" class="filter-btn" data-category="climate">
+            <span>Climate</span> <span class="filter-count-badge">...</span>
+          </button>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="refresh-btn" class="refresh-btn" title="Refresh Table">
+            <span>🔄 Refresh</span>
+          </button>
+          <button type="button" id="open-add-btn" class="btn-primary" title="Add a new device">
+            <span>➕ Add New Device</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Devices Data Table -->
+    <main class="table-card">
+      <div class="table-header-bar">
+        <div class="table-header-title">
+          <h2><span>📋</span> Registered Device Data Table</h2>
+          <p id="table-subtitle">Predefined devices, microcontrollers, and connected hardware channels</p>
+        </div>
+        <div class="table-actions">
+          <span class="count-badge" id="table-results-count">0 Records</span>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="devices-table">
+          <thead>
+            <tr>
+              <th>Device & Identifier</th>
+              <th>Node ID</th>
+              <th>Device Type</th>
+              <th>Location</th>
+              <th>Predefined Actions & Params</th>
+              <th>Connected Sub-Devices</th>
+              <th style="text-align: center;">Power State</th>
+              <th style="text-align: center;">Status</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="devices-tbody">
+            <tr>
+              <td colspan="8" style="text-align: center; padding: 40px; color: var(--text-muted);">
+                Loading devices from RN Hub...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add / Edit Device Modal Overlay -->
+  <div class="modal-overlay" id="device-modal" role="dialog" aria-modal="true" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title" id="modal-title">➕ Add New Device</div>
+        <button type="button" class="modal-close-btn" id="modal-close-btn" aria-label="Close">&times;</button>
+      </div>
+
+      <form id="device-form">
+        <div class="modal-body">
+          <input type="hidden" id="form-is-edit" value="false">
+
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label" for="form-dev-id">Device ID / MAC Address *</label>
+              <input type="text" id="form-dev-id" class="form-input" placeholder="e.g. 98a316e6b658 or garden_lights" required />
+              <span class="form-hint">Unique 12-hex MAC or canonical ID</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="form-dev-name">Device Name *</label>
+              <input type="text" id="form-dev-name" class="form-input" placeholder="e.g. Garden Pathway Lights" required />
+              <span class="form-hint">Friendly name spoken to assistant</span>
+            </div>
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label" for="form-node-id">Hardware Node ID *</label>
+              <input type="text" id="form-node-id" class="form-input" placeholder="e.g. NODE-ESP8266-02" required />
+              <span class="form-hint">Controller or microcontroller node</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="form-dev-type">Device Type *</label>
+              <select id="form-dev-type" class="form-select" required>
+                <option value="Relay">Relay Controller</option>
+                <option value="lighting">Lighting System</option>
+                <option value="hub">RN Hub / Gateway</option>
+                <option value="smart_plug">Smart Plug</option>
+                <option value="climate">Climate / HVAC</option>
+                <option value="robot">Mobile Robot</option>
+                <option value="arm">Robotic Arm</option>
+                <option value="sensor">Sensor Node</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="form-location">Room / Location</label>
+            <input type="text" id="form-location" class="form-input" placeholder="e.g. Living Room, Farm, Greenhouse" />
+            <span class="form-hint">Zone or physical location for room-based voice queries</span>
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label class="form-label" for="form-actions">Predefined Actions (Comma-separated)</label>
+              <input type="text" id="form-actions" class="form-input" placeholder="e.g. set_power, turn_on, turn_off, get_status" />
+              <span class="form-hint">Supported device command actions</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="form-params">Predefined Params (JSON)</label>
+              <input type="text" id="form-params" class="form-input" placeholder='{"state": "on"}' />
+              <span class="form-hint">Default/predefined key-value parameters</span>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="form-aliases">Voice Aliases (Comma-separated)</label>
+            <input type="text" id="form-aliases" class="form-input" placeholder="e.g. garden lights, pathway lights, garden lamp" />
+            <span class="form-hint">Alternative spoken trigger phrases</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="form-sub-devices">Connected Sub-Devices (JSON format or line-separated)</label>
+            <textarea id="form-sub-devices" class="form-textarea" placeholder='[{"name": "Lamp 1", "channel": "CH1"}, {"name": "Lamp 2", "channel": "CH2"}]'></textarea>
+            <span class="form-hint">Peripherals, lighting fixtures, or sensor channels wired to this node</span>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="modal-cancel-btn">Cancel</button>
+          <button type="submit" class="btn-primary" id="modal-submit-btn">Save Device</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast-notice" id="toast-notice"></div>
+
+  <script src="devices.js"></script>
+</body>
+</html>

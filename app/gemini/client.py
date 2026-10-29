@@ -8,7 +8,7 @@ from google.genai import types
 from pydantic import ValidationError
 
 from app.config import settings
-from app.gemini.prompts import SYSTEM_INSTRUCTION
+from app.gemini.prompts import SYSTEM_INSTRUCTION, get_system_instruction
 from app.gemini.schemas import GeminiResponse, DeviceCommand
 
 logger = logging.getLogger(__name__)
@@ -22,14 +22,22 @@ class GeminiClient:
 
     @property
     def client(self) -> genai.Client:
-        if self._client is None:
+        import asyncio
+        try:
+            curr_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            curr_loop = None
+
+        if self._client is None or getattr(self, "_bound_loop", None) != curr_loop:
             self._client = genai.Client(api_key=self.api_key)
+            self._bound_loop = curr_loop
         return self._client
 
     async def generate_response(
         self,
         prompt: str,
-        conversation_history: Optional[List[Dict[str, Any]]] = None
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+        session_id: Optional[str] = None
     ) -> GeminiResponse:
         """Generate structured response using GeminiResponse schema with cross-field validation."""
         # Check for unconfigured API key
@@ -42,10 +50,26 @@ class GeminiClient:
             )
 
         try:
-            # Build conversation context
-            full_prompt_lines = []
+            # Build conversation context with live time and reminder schedule
+            from datetime import datetime
+            now_dt = datetime.now()
+            time_str = now_dt.strftime("%I:%M %p, %A, %B %d, %Y")
+
+            full_prompt_lines = [f"Context: Current Local Time is {time_str}."]
+
+            try:
+                from app.tools.reminders import list_reminders
+                active_rem_data = list_reminders(session_id=session_id)
+                if active_rem_data.get("reminders"):
+                    rem_descs = [f"- '{r['text']}' at {r['due_at']} (id: {r['id']})" for r in active_rem_data["reminders"]]
+                    full_prompt_lines.append("Active Reminders in Schedule for this session:\n" + "\n".join(rem_descs))
+                else:
+                    full_prompt_lines.append("Active Reminders in Schedule for this session: None")
+            except Exception:
+                pass
+
             if conversation_history:
-                full_prompt_lines.append("Previous Conversation:")
+                full_prompt_lines.append("\nPrevious Conversation:")
                 for msg in conversation_history[-6:]:
                     role = "User" if msg.get("role") == "user" else "Assistant"
                     full_prompt_lines.append(f"{role}: {msg.get('content', '')}")
@@ -56,7 +80,7 @@ class GeminiClient:
 
             # Configure structured JSON output with GeminiResponse
             config = types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
+                system_instruction=get_system_instruction(),
                 response_mime_type="application/json",
                 response_schema=GeminiResponse,
             )

@@ -16,6 +16,7 @@ from app.tools.web_search import search_web
 from app.tools.places import search_places, extract_location, extract_cuisine
 from app.tools.device_status import list_devices, get_device_status
 from app.tools.device_control import control_device, schedule_device_action
+from app.tools.reminders import set_reminder, list_reminders, cancel_reminder, parse_reminder_expression
 from app.security.command_validator import command_safety_validator
 from app.context.builder import context_builder
 from app.context.memory import conversation_memory
@@ -72,6 +73,22 @@ def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             params = args.get("parameters", {})
             return schedule_device_action(device_id=dev_id, action=action, delay_minutes=delay, parameters=params)
 
+        elif name == "set_reminder":
+            text = args.get("text", "")
+            delay_secs = args.get("delay_seconds")
+            delay_mins = args.get("delay_minutes")
+            sess = args.get("session_id", "default_session")
+            return set_reminder(text=text, delay_seconds=delay_secs, delay_minutes=delay_mins, session_id=sess)
+
+        elif name == "list_reminders":
+            sess = args.get("session_id")
+            return list_reminders(session_id=sess)
+
+        elif name == "cancel_reminder":
+            target = args.get("reminder_id", "all")
+            sess = args.get("session_id")
+            return cancel_reminder(reminder_id_or_keyword=target, session_id=sess)
+
         return {"error": f"Unknown or unauthorized tool: '{name}'"}
 
     except Exception as e:
@@ -87,8 +104,8 @@ class ToolAgent:
         if "3.5" in self.model_name or "flash" in self.model_name:
             pass
         self._load_system_prompt()
-        self.client = None
-        self._init_client()
+        self._client = None
+        self._bound_loop = None
 
     def _load_system_prompt(self):
         if SYSTEM_PROMPT_PATH.exists():
@@ -96,14 +113,26 @@ class ToolAgent:
         else:
             self.system_prompt = "You are RN Assistant, the intelligent voice assistant developed by RN Robots."
 
-    def _init_client(self):
-        api_key = settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
-        if api_key:
-            try:
-                self.client = genai.Client(api_key=api_key)
-            except Exception as e:
-                logger.warning(f"Failed to initialize Gemini Client: {e}")
-                self.client = None
+    @property
+    def client(self) -> Optional[genai.Client]:
+        import asyncio
+        try:
+            curr_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            curr_loop = None
+
+        if self._client is None or getattr(self, "_bound_loop", None) != curr_loop:
+            api_key = settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
+            if api_key:
+                try:
+                    self._client = genai.Client(api_key=api_key)
+                except Exception as e:
+                    logger.warning(f"Failed to initialize Gemini Client: {e}")
+                    self._client = None
+            else:
+                self._client = None
+            self._bound_loop = curr_loop
+        return self._client
 
     def _detect_tools_heuristically(self, query: str) -> List[tuple[str, Dict[str, Any]]]:
         """Detect which tools are required based on user intent."""
@@ -145,9 +174,15 @@ class ToolAgent:
             tools_to_run.append(("search_web", {"query": clean_q or q}))
 
         # Device status intent (e.g., "Are the farm lights on?", "whether the testing farm lights are on")
-        if any(p in q for p in ["are the", "is the", "status of", "check the", "whether the", "are on", "is on"]) and any(d in q for d in ["light", "lights", "farm", "thermostat", "robot"]):
-            dev_id = "98a316e6b658" if ("farm" in q) else ("room_lights" if "room" in q else "kitchen_lights")
-            tools_to_run.append(("get_device_status", {"device_id": dev_id}))
+        is_science_or_knowledge = any(k in q for k in ["speed of light", "why is", "how does", "what is light", "explain", "meaning of", "tell me about"])
+        if not is_science_or_knowledge:
+            is_status_ask = (
+                any(p in q for p in ["are on", "is on", "are off", "is off", "status of", "check status"]) or
+                (any(p in q for p in ["are the", "is the", "whether the", "check if the"]) and any(s in q for s in ["on", "off", "working", "status", "state"]))
+            )
+            if is_status_ask and any(d in q for d in ["light", "lights", "farm", "thermostat", "robot"]):
+                dev_id = "98a316e6b658" if ("farm" in q) else ("room_lights" if "room" in q else "kitchen_lights")
+                tools_to_run.append(("get_device_status", {"device_id": dev_id}))
 
         # Device control intent (e.g. "Turn on the testing farm lights")
         elif any(act in q for act in ["turn on", "turn off", "switch on", "switch off", "power on", "power off"]):
@@ -252,6 +287,18 @@ class ToolAgent:
         if "control_device" in tool_results:
             cd = tool_results["control_device"]
             spoken_parts.append(cd.get("feedback", "Sending command to RN Hub."))
+
+        if "set_reminder" in tool_results:
+            rem = tool_results["set_reminder"]
+            spoken_parts.append(rem.get("feedback", "Reminder scheduled."))
+
+        if "list_reminders" in tool_results:
+            lrem = tool_results["list_reminders"]
+            spoken_parts.append(lrem.get("feedback", "Here are your active reminders."))
+
+        if "cancel_reminder" in tool_results:
+            crem = tool_results["cancel_reminder"]
+            spoken_parts.append(crem.get("feedback", "Reminder cancelled."))
 
         if not spoken_parts:
             spoken_parts.append(f"I received your request: '{query}'. How can I assist you further?")

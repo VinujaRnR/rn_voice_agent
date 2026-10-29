@@ -7,6 +7,7 @@ from app.conversation.manager import ConversationManager
 from app.stt import stt_service, whisper_service
 from app.gemini.tool_agent import tool_agent
 from app.commands.device_registry import device_registry
+from app.tools.device_control import execute_device_command
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -62,7 +63,8 @@ async def chat_endpoint(request: ChatRequest):
         # Request completion from Gemini
         gemini_response = await gemini_client.generate_response(
             prompt=prompt,
-            conversation_history=history
+            conversation_history=history,
+            session_id=session_id
         )
 
     # Update pending actions based on Gemini response
@@ -77,17 +79,64 @@ async def chat_endpoint(request: ChatRequest):
         )
     elif gemini_response.mode == "device_command":
         if gemini_response.is_executable():
-            # Update device state in registry
-            if gemini_response.command.action in ["set_power", "turn_on", "turn_off"]:
-                state = gemini_response.command.parameters.get("state", "on" if gemini_response.command.action == "turn_on" else "off")
-                device_registry.set_power_state(gemini_response.command.device_id, state)
+            cmd_obj = gemini_response.command
+
+            # Enrich command fields from device registry if not already fully populated
+            resolved_dev = (
+                device_registry.resolve_device(cmd_obj.device_id)
+                or device_registry.normalize_device_id(cmd_obj.device_id)
+            )
+            sub_dev = device_registry.get_sub_device(resolved_dev or cmd_obj.device_id, cmd_obj.device_id)
+            if not sub_dev and resolved_dev:
+                dev_meta = device_registry.get_device(resolved_dev) or {}
+                connected = dev_meta.get("connected_devices", [])
+                if len(connected) == 1:
+                    sub_dev = connected[0]
+
+            if sub_dev:
+                if not cmd_obj.channel_key:
+                    cmd_obj.channel_key = sub_dev.get("channel_key") or f"relay:{sub_dev.get('type', 'light')}"
+                if not cmd_obj.device_type:
+                    cmd_obj.device_type = sub_dev.get("device_type") or sub_dev.get("type", "light")
+                if not cmd_obj.device_number:
+                    cmd_obj.device_number = sub_dev.get("device_number") or 1
+                if not cmd_obj.device_name:
+                    cmd_obj.device_name = sub_dev.get("device_name") or sub_dev.get("name")
+                if cmd_obj.device_id == resolved_dev and sub_dev.get("device_id"):
+                    cmd_obj.device_id = sub_dev.get("device_id")
+
+            parent_dev = device_registry.get_device(resolved_dev or cmd_obj.device_id) or {}
+            available_actions = parent_dev.get("actions") or parent_dev.get("allowed_actions") or []
+            if "LIGHT_ON" in available_actions or "LIGHT_OFF" in available_actions:
+                desired_on = (
+                    (cmd_obj.action in ["turn_on", "LIGHT_ON"])
+                    or (hasattr(cmd_obj.parameters, "get") and cmd_obj.parameters.get("state") == "on")
+                    or (isinstance(cmd_obj.parameters, dict) and cmd_obj.parameters.get("state") == "on")
+                    or ("on" in str(cmd_obj.actions).lower())
+                )
+                cmd_obj.actions = "LIGHT_ON" if desired_on else "LIGHT_OFF"
+                cmd_obj.action = cmd_obj.actions
+                from app.gemini.schemas import DeviceParameters
+                cmd_obj.params = DeviceParameters()
+                cmd_obj.parameters = {}
+
+            exec_result = execute_device_command(
+                device_id=cmd_obj.device_id,
+                action=cmd_obj.action,
+                parameters=cmd_obj.parameters,
+                session_id=session_id,
+                command_obj=cmd_obj
+            )
+            if exec_result.get("command_id"):
+                cmd_obj.command_id = exec_result["command_id"]
+
             conversation_manager.resolve_pending_action(session_id)
             conversation_manager.record_executed_command(
                 session_id=session_id,
-                action=gemini_response.command.action,
-                target_device=gemini_response.command.device_id,
-                state="sent",
-                result={"destination": "RN Hub"}
+                action=cmd_obj.action,
+                target_device=cmd_obj.device_id,
+                state="published" if exec_result.get("published") else "validated",
+                result=exec_result
             )
         else:
             # Invalid response guard
@@ -96,6 +145,24 @@ async def chat_endpoint(request: ChatRequest):
                 speech="Command could not be verified. Please specify the target device.",
                 command=None,
                 missing_fields=["device_id"]
+            )
+
+    # Handle reasoned reminders
+    if getattr(gemini_response, "reminder", None):
+        rem = gemini_response.reminder
+        if rem.action_type == "set":
+            from app.tools.reminders import set_reminder
+            set_reminder(
+                text=rem.task or "your reminder",
+                delay_minutes=rem.delay_minutes,
+                target_time=rem.target_time,
+                session_id=session_id
+            )
+        elif rem.action_type == "cancel":
+            from app.tools.reminders import cancel_reminder
+            cancel_reminder(
+                reminder_id_or_keyword=rem.task or "latest",
+                session_id=session_id
             )
 
     # 4. Record assistant reply in SQLite message history

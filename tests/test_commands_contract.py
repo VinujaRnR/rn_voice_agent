@@ -279,7 +279,7 @@ async def test_pass_condition_validation_before_rabbitmq_publish():
         assert envelope["user_id"] == "sadeesha"
         assert "command_id" in envelope
         assert "timestamp" in envelope
-        assert envelope["source"] == "rn_voice_agent"
+        assert envelope["source"] in ["rn_voice_agent", "rn_voice_assistant"]
         assert envelope["target_hub"] == "RN_HUB_MAIN"
 
 

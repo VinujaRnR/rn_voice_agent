@@ -43,9 +43,13 @@ class ContextBuilder:
             {
                 "id": dev["id"],
                 "name": dev["name"],
+                "node_id": dev.get("node_id"),
                 "type": dev.get("type", "generic"),
+                "location": dev.get("location"),
                 "status": dev.get("status", "unknown"),
-                "allowed_actions": dev.get("allowed_actions", [])
+                "allowed_actions": dev.get("allowed_actions", []),
+                "connected_devices_count": dev.get("connected_devices_count", len(dev.get("connected_devices", []))),
+                "connected_devices": dev.get("connected_devices", [])
             }
             for dev in all_devices
         ]

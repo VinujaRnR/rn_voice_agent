@@ -78,13 +78,46 @@ class ConversationStorage:
                     session_id TEXT NOT NULL,
                     action TEXT NOT NULL,
                     target_device TEXT,
-                    state TEXT NOT NULL DEFAULT 'pending',
+                    state TEXT NOT NULL DEFAULT 'validated',
+                    parameters TEXT DEFAULT '{}',
                     result TEXT DEFAULT '{}',
+                    error TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
                 );
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_command_session ON command_history(session_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_command_state ON command_history(state);")
+
+            # Column migration check for command_history
+            cursor = conn.execute("PRAGMA table_info(command_history);")
+            cmd_cols = {row[1] for row in cursor.fetchall()}
+            if "parameters" not in cmd_cols:
+                conn.execute("ALTER TABLE command_history ADD COLUMN parameters TEXT DEFAULT '{}';")
+            if "error" not in cmd_cols:
+                conn.execute("ALTER TABLE command_history ADD COLUMN error TEXT;")
+            if "updated_at" not in cmd_cols:
+                conn.execute("ALTER TABLE command_history ADD COLUMN updated_at TEXT;")
+
+            # 5. reminders and schedules table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS reminders (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    due_at_timestamp REAL NOT NULL,
+                    due_at_iso TEXT NOT NULL,
+                    delay_seconds INTEGER DEFAULT 0,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    reminded_at TIMESTAMP,
+                    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_session ON reminders(session_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at_timestamp);")
 
     # Session Management
     def ensure_session(self, session_id: str, user_id: str = "default_user"):
@@ -244,27 +277,79 @@ class ConversationStorage:
     def record_command(
         self,
         command_id: str,
-        session_id: str,
-        action: str,
-        target_device: Optional[str],
-        state: str = "pending",
-        result: Optional[Dict[str, Any]] = None
+        session_id: str = "default_session",
+        action: str = "unknown",
+        target_device: Optional[str] = None,
+        state: str = "validated",
+        result: Optional[Dict[str, Any]] = None,
+        parameters: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None
     ):
         self.ensure_session(session_id)
         result_json = json.dumps(result or {})
+        params_json = json.dumps(parameters or {})
         with self._get_connection() as conn:
             conn.execute("""
-                INSERT INTO command_history (command_id, session_id, action, target_device, state, result)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO command_history (command_id, session_id, action, target_device, state, parameters, result, error, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(command_id) DO UPDATE SET
                     state=excluded.state,
-                    result=excluded.result;
-            """, (command_id, session_id, action, target_device, state, result_json))
+                    parameters=excluded.parameters,
+                    result=excluded.result,
+                    error=excluded.error,
+                    updated_at=CURRENT_TIMESTAMP;
+            """, (command_id, session_id, action, target_device, state, params_json, result_json, error))
+
+    def update_command_state(
+        self,
+        command_id: str,
+        state: str,
+        result: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None
+    ) -> bool:
+        """Update lifecycle state of a command (validated, published, accepted, completed, rejected, failed, expired, unknown)."""
+        with self._get_connection() as conn:
+            if result is not None:
+                result_json = json.dumps(result)
+                cursor = conn.execute("""
+                    UPDATE command_history
+                    SET state = ?, result = ?, error = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE command_id = ?;
+                """, (state, result_json, error, command_id))
+            else:
+                cursor = conn.execute("""
+                    UPDATE command_history
+                    SET state = ?, error = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE command_id = ?;
+                """, (state, error, command_id))
+            return cursor.rowcount > 0
+
+    def get_command(self, command_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve command record and its execution state by command ID."""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT command_id, session_id, action, target_device, state, parameters, result, error, timestamp, updated_at
+                FROM command_history
+                WHERE command_id = ?;
+            """, (command_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            item = dict(row)
+            try:
+                item["parameters"] = json.loads(item.get("parameters") or "{}")
+            except Exception:
+                item["parameters"] = {}
+            try:
+                item["result"] = json.loads(item.get("result") or "{}")
+            except Exception:
+                item["result"] = {}
+            return item
 
     def get_command_history(self, session_id: str) -> List[Dict[str, Any]]:
         with self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT command_id, action, target_device, state, result, timestamp
+                SELECT command_id, action, target_device, state, parameters, result, error, timestamp, updated_at
                 FROM command_history
                 WHERE session_id = ?
                 ORDER BY timestamp DESC;
@@ -272,6 +357,116 @@ class ConversationStorage:
             records = []
             for row in cursor.fetchall():
                 item = dict(row)
-                item["result"] = json.loads(item["result"])
+                try:
+                    item["result"] = json.loads(item.get("result") or "{}")
+                except Exception:
+                    item["result"] = {}
+                try:
+                    item["parameters"] = json.loads(item.get("parameters") or "{}")
+                except Exception:
+                    item["parameters"] = {}
                 records.append(item)
             return records
+
+    # Reminder & Schedule Operations
+    def create_reminder(
+        self,
+        reminder_id: str,
+        session_id: str,
+        text: str,
+        due_at_timestamp: float,
+        due_at_iso: str,
+        delay_seconds: int = 0
+    ) -> Dict[str, Any]:
+        self.ensure_session(session_id)
+        with self._get_connection() as conn:
+            conn.execute("""
+                INSERT INTO reminders (id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                ON CONFLICT(id) DO UPDATE SET
+                    session_id=excluded.session_id,
+                    text=excluded.text,
+                    due_at_timestamp=excluded.due_at_timestamp,
+                    due_at_iso=excluded.due_at_iso,
+                    delay_seconds=excluded.delay_seconds,
+                    status=excluded.status;
+            """, (reminder_id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds))
+        return {
+            "id": reminder_id,
+            "session_id": session_id,
+            "text": text,
+            "due_at_timestamp": due_at_timestamp,
+            "due_at_iso": due_at_iso,
+            "delay_seconds": delay_seconds,
+            "status": "pending"
+        }
+
+    def get_active_reminders(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            if session_id:
+                cursor = conn.execute("""
+                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at
+                    FROM reminders
+                    WHERE session_id = ? AND status = 'pending'
+                    ORDER BY due_at_timestamp ASC;
+                """, (session_id,))
+            else:
+                cursor = conn.execute("""
+                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at
+                    FROM reminders
+                    WHERE status = 'pending'
+                    ORDER BY due_at_timestamp ASC;
+                """)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_due_reminders(self, current_timestamp: Optional[float] = None) -> List[Dict[str, Any]]:
+        ts = current_timestamp if current_timestamp is not None else time.time()
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at
+                FROM reminders
+                WHERE status = 'pending' AND due_at_timestamp <= ?
+                ORDER BY due_at_timestamp ASC;
+            """, (ts,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def mark_reminder_triggered(self, reminder_id: str) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                UPDATE reminders
+                SET status = 'reminded', reminded_at = CURRENT_TIMESTAMP
+                WHERE id = ?;
+            """, (reminder_id,))
+            return cursor.rowcount > 0
+
+    def cancel_reminder(self, reminder_id: str, session_id: Optional[str] = None) -> bool:
+        with self._get_connection() as conn:
+            if session_id:
+                cursor = conn.execute("""
+                    UPDATE reminders
+                    SET status = 'cancelled'
+                    WHERE (id = ? OR text LIKE ?) AND session_id = ? AND status = 'pending';
+                """, (reminder_id, f"%{reminder_id}%", session_id))
+            else:
+                cursor = conn.execute("""
+                    UPDATE reminders
+                    SET status = 'cancelled'
+                    WHERE (id = ? OR text LIKE ?) AND status = 'pending';
+                """, (reminder_id, f"%{reminder_id}%"))
+            return cursor.rowcount > 0
+
+    def clear_all_reminders(self, session_id: Optional[str] = None) -> int:
+        with self._get_connection() as conn:
+            if session_id:
+                cursor = conn.execute("""
+                    UPDATE reminders
+                    SET status = 'cancelled'
+                    WHERE session_id = ? AND status = 'pending';
+                """, (session_id,))
+            else:
+                cursor = conn.execute("""
+                    UPDATE reminders
+                    SET status = 'cancelled'
+                    WHERE status = 'pending';
+                """)
+            return cursor.rowcount

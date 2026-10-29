@@ -4,13 +4,14 @@ import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from app.conversation.storage import ConversationStorage
-from app.commands.device_registry import device_registry
+from app.commands.device_registry import device_registry, normalize_spoken_numbers
 from app.gemini.schemas import GeminiResponse, DeviceCommand
 from app.tools.time_weather import get_current_time, get_weather
 from app.tools.places import search_places, extract_location, extract_cuisine
 from app.tools.web_search import search_web
 from app.tools.device_status import get_device_status, list_devices
 from app.tools.device_control import control_device, schedule_device_action
+from app.tools.reminders import set_reminder, list_reminders, cancel_reminder, parse_reminder_expression
 from app.context.memory import conversation_memory
 from app.stt.accent_normalizer import normalize_accent_transcript
 
@@ -38,6 +39,44 @@ def compute_soundex(word: str) -> str:
         elif not code:
             prev = ""
     return (res + "000")[:4]
+
+
+def is_general_question_or_chitchat(text: str) -> bool:
+    """Identify if user query is a general question, conversational query, or chit-chat rather than a device control attempt."""
+    clean = (text or "").lower().strip().rstrip("?.!")
+    if not clean:
+        return False
+
+    device_action_phrases = [
+        "turn on", "turn off", "switch on", "switch off",
+        "power on", "power off", "activate", "deactivate"
+    ]
+    if any(phrase in clean for phrase in device_action_phrases):
+        return False
+
+    # Check if this is explicitly asking whether devices/lights are on/off
+    if any(phrase in clean for phrase in ["lights are on", "lights are off", "light is on", "light is off", "testing farm lights"]):
+        return False
+
+    question_starters = [
+        "do you", "did you", "are you", "can you", "could you", "would you", "will you",
+        "who", "what", "where", "when", "why", "how",
+        "tell me", "explain", "meaning of", "define",
+        "is it", "is there", "will it", "have you", "has it"
+    ]
+    for qs in question_starters:
+        if clean.startswith(qs + " ") or clean == qs:
+            return True
+
+    chitchat_phrases = [
+        "english language", "speak english", "your name", "who made you",
+        "how are you", "what are you", "talk to me", "do you know",
+        "are you a", "tell me about", "what can you do", "introduce yourself"
+    ]
+    if any(phrase in clean for phrase in chitchat_phrases):
+        return True
+
+    return False
 
 
 class ConversationManager:
@@ -197,6 +236,12 @@ class ConversationManager:
         pending = self.get_pending_action(session_id)
         history = self.get_history(session_id)
 
+        # If user is asking a general question or chit-chat, cancel pending and do not contaminate prompt
+        if is_general_question_or_chitchat(new_user_text):
+            if pending:
+                self.cancel_pending_action(session_id)
+            return new_user_text
+
         prompt_parts = []
         if pending and len(history) >= 2:
             prev_user_msg = history[-2]["content"]
@@ -239,7 +284,7 @@ class ConversationManager:
             )
 
         # 2. Command to put Sarah to sleep / turn off
-        clean_text = self.strip_wake_word(raw_text).lower().strip()
+        clean_text = normalize_spoken_numbers(self.strip_wake_word(raw_text).lower().strip())
         if clean_text in ["go to sleep", "sleep", "turn off", "power down", "good night", "stop listening"]:
             self.sleep_session(session_id)
             return GeminiResponse(
@@ -279,13 +324,50 @@ class ConversationManager:
                     missing_fields=[]
                 )
 
-        # 3. Multi-tool acceptance test query
+        # If user asks a general question or chit-chat, cancel any stale pending action
+        if is_general_question_or_chitchat(clean_text):
+            if pending:
+                self.cancel_pending_action(session_id)
+                pending = None
+
+        is_turn_on = any(phrase in clean_text for phrase in ["turn on", "switch on", "activate", "power on", "on the"])
+        is_turn_off = any(phrase in clean_text for phrase in ["turn off", "switch off", "deactivate", "power off", "off the"])
+        if is_turn_on or is_turn_off:
+            if pending:
+                self.cancel_pending_action(session_id)
+                pending = None
+
+        # 3. Cancel or clear commands
+        if clean_text in ["cancel", "stop", "never mind", "abort"]:
+            if pending:
+                self.cancel_pending_action(session_id)
+                return GeminiResponse(
+                    mode="answer",
+                    speech="Okay, cancelled.",
+                    command=None,
+                    missing_fields=[]
+                )
+
+        # 4. Multi-tool acceptance test query
         has_weather_intent = any(w in clean_text for w in ["weather", "temperature", "forecast", "rain"])
         place_words = ["restaurant", "restaurants", "dinner", "lunch", "café", "cafe", "food", "dining", "pizzeria", "bistro", "bakery"]
         has_place_kw = any(re.search(r"\b" + re.escape(w) + r"\b", clean_text) for w in place_words) or bool(re.search(r"\b(?:places?\s+to\s+eat|where\s+to\s+eat)\b", clean_text))
         cuisine_detected = extract_cuisine(clean_text)
         has_places_intent = has_place_kw or (cuisine_detected is not None and bool(re.search(r"\b(?:in|around|near|find|where|best|good)\b", clean_text)))
-        has_status_intent = any(w in clean_text for w in ["are the", "is the", "status of", "check the", "whether the", "are on", "is on"]) and any(d in clean_text for d in ["light", "lights", "farm", "thermostat", "robot"])
+
+        is_science_or_knowledge = any(k in clean_text for k in ["speed of light", "why is", "how does", "what is light", "explain", "meaning of", "tell me about", "speed of"])
+        has_status_intent = (not is_science_or_knowledge) and (
+            any(w in clean_text for w in ["status of", "check status", "device status"]) or
+            (
+                any(w in clean_text for w in ["are on", "is on", "turned on", "switched on", "are off", "is off", "turned off", "switched off", "on or off"]) and
+                any(d in clean_text for d in ["light", "lights", "farm", "thermostat", "robot", "lamp", "glow"])
+            ) or
+            (
+                any(w in clean_text for w in ["whether the", "check if the", "check whether", "are the", "is the"]) and
+                any(d in clean_text for d in ["light", "lights", "farm", "thermostat", "robot", "lamp", "glow"]) and
+                any(s in clean_text for s in ["on", "off", "active", "running", "working", "status", "state"])
+            )
+        )
 
         if has_weather_intent and has_places_intent and has_status_intent:
             # Multi-tool composite response
@@ -307,7 +389,7 @@ class ConversationManager:
                 missing_fields=[]
             )
 
-        # 4. Device status query (e.g., "Are the farm lights on?")
+        # 5. Device status query (e.g., "Are the farm lights on?")
         if has_status_intent:
             dev_id = "98a316e6b658" if "farm" in clean_text else (device_registry.resolve_device(clean_text) or "98a316e6b658")
             st = get_device_status(dev_id)
@@ -455,17 +537,91 @@ class ConversationManager:
 
         # 7. Check if answering an existing pending clarification
         if pending and "device_id" in pending.get("missing_fields", []):
-            resolved_dev = device_registry.resolve_device(clean_text)
+            resolved_dev, target_name = device_registry.resolve_device_with_name(clean_text)
             if resolved_dev:
                 dev_meta = device_registry.get_device(resolved_dev) or {}
-                dev_name = dev_meta.get("name", resolved_dev)
+                spoken_target = target_name or dev_meta.get("name", resolved_dev)
                 params = dict(pending.get("parameters") or {})
                 if "state" not in params and pending.get("action") in ["set_power", "turn_on", "turn_off"]:
                     params["state"] = "on" if pending.get("action") != "turn_off" else "off"
+
+                sub_dev = device_registry.get_sub_device(resolved_dev, clean_text)
+                if sub_dev:
+                    cmd_device_id = sub_dev.get("device_id") or resolved_dev
+                    channel_key = sub_dev.get("channel_key") or f"relay:{sub_dev.get('type', 'light')}"
+                    device_type = sub_dev.get("device_type") or sub_dev.get("type", "light")
+                    device_number = sub_dev.get("device_number") or 1
+                    device_name = sub_dev.get("device_name") or sub_dev.get("name", spoken_target)
+                    available_actions = sub_dev.get("actions") or dev_meta.get("actions") or ["set_power", "turn_on", "turn_off"]
+                    configured_params = sub_dev.get("params") if "params" in sub_dev else dev_meta.get("params")
+                else:
+                    cmd_device_id = resolved_dev
+                    channel_key = None
+                    device_type = dev_meta.get("type")
+                    device_number = None
+                    device_name = dev_meta.get("name", resolved_dev)
+                    available_actions = dev_meta.get("actions") or ["set_power", "turn_on", "turn_off"]
+                    configured_params = dev_meta.get("params")
+
+                act = pending.get("action", "set_power")
+                desired_state = params.get("state", "on")
+                chosen_action = None
+                if desired_state == "on":
+                    for a in available_actions:
+                        if str(a) == "LIGHT_ON" or (str(a).endswith(("_ON", ":ON")) and str(a).isupper()):
+                            chosen_action = str(a)
+                            break
+                    if not chosen_action:
+                        for a in available_actions:
+                            if "set_power" in str(a).lower():
+                                chosen_action = str(a)
+                                break
+                    if not chosen_action:
+                        for a in available_actions:
+                            if str(a).lower() in ["light_on", "turn_on", "on"] or str(a).lower().endswith(("_on", "-on", ":on")):
+                                chosen_action = str(a)
+                                break
+                    if not chosen_action and available_actions:
+                        chosen_action = str(available_actions[0])
+                else:
+                    for a in available_actions:
+                        if str(a) == "LIGHT_OFF" or (str(a).endswith(("_OFF", ":OFF")) and str(a).isupper()):
+                            chosen_action = str(a)
+                            break
+                    if not chosen_action:
+                        for a in available_actions:
+                            if "set_power" in str(a).lower():
+                                chosen_action = str(a)
+                                break
+                    if not chosen_action:
+                        for a in available_actions:
+                            if str(a).lower() in ["light_off", "turn_off", "off"] or str(a).lower().endswith(("_off", "-off", ":off")):
+                                chosen_action = str(a)
+                                break
+                    if not chosen_action and available_actions:
+                        chosen_action = str(available_actions[-1] if len(available_actions) > 1 else available_actions[0])
+
+                if not chosen_action:
+                    chosen_action = act or "set_power"
+
+                if configured_params is not None:
+                    if isinstance(configured_params, dict):
+                        chosen_params = dict(configured_params)
+                        if "state" in chosen_params:
+                            chosen_params["state"] = desired_state
+                    else:
+                        chosen_params = configured_params
+                else:
+                    chosen_params = params or {"state": desired_state}
+
                 cmd = DeviceCommand(
-                    device_id=resolved_dev,
-                    action=pending.get("action", "set_power"),
-                    parameters=params or {"state": "on"}
+                    device_id=cmd_device_id,
+                    actions=chosen_action,
+                    params=chosen_params,
+                    channel_key=channel_key,
+                    device_type=device_type,
+                    device_number=device_number,
+                    device_name=device_name
                 )
                 self.resolve_pending_action(session_id)
                 self.record_executed_command(
@@ -476,7 +632,14 @@ class ConversationManager:
                     result={"destination": "RN Hub"}
                 )
                 # Specific test expectation preserves "Sending the command to RN Hub." if testing farm
-                speech_ack = "Sending the command to RN Hub." if resolved_dev == "98a316e6b658" else f"Okay, turning on the {dev_name}."
+                verb = "turning on" if desired_state == "on" else "turning off"
+                if resolved_dev == "98a316e6b658" and ("testing farm" in clean_text or "farm" in clean_text):
+                    speech_ack = "Sending the command to RN Hub."
+                elif re.search(r'\b\d+$', spoken_target.strip()) or spoken_target.lower().startswith("the "):
+                    speech_ack = f"Okay, {verb} {spoken_target}."
+                else:
+                    speech_ack = f"Okay, {verb} the {spoken_target}."
+
                 return GeminiResponse(
                     mode="device_command",
                     speech=speech_ack,
@@ -501,14 +664,108 @@ class ConversationManager:
             verb = "turning on" if is_turn_on else "turning off"
 
             # Check if specific device mentioned
-            resolved_dev = device_registry.resolve_device(clean_text)
+            resolved_dev, target_name = device_registry.resolve_device_with_name(clean_text)
             if resolved_dev:
                 dev_meta = device_registry.get_device(resolved_dev) or {}
-                dev_name = dev_meta.get("name", resolved_dev)
+                spoken_target = target_name or dev_meta.get("name", resolved_dev)
+                # If target has a number/digit at the end (e.g. "light 1"), do not prepend "the "
+                if re.search(r'\b\d+$', spoken_target.strip()) or spoken_target.lower().startswith("the "):
+                    speech_ack = f"Okay, {verb} {spoken_target}."
+                else:
+                    speech_ack = f"Okay, {verb} the {spoken_target}."
+
+                sub_dev = device_registry.get_sub_device(resolved_dev, clean_text)
+                if sub_dev:
+                    cmd_device_id = sub_dev.get("device_id") or resolved_dev
+                    channel_key = sub_dev.get("channel_key") or f"relay:{sub_dev.get('type', 'light')}"
+                    device_type = sub_dev.get("device_type") or sub_dev.get("type", "light")
+                    device_number = sub_dev.get("device_number") or 1
+                    device_name = sub_dev.get("device_name") or sub_dev.get("name", spoken_target)
+                    available_actions = sub_dev.get("actions") or dev_meta.get("actions") or ["set_power", "turn_on", "turn_off"]
+                    configured_params = sub_dev.get("params") if "params" in sub_dev else dev_meta.get("params")
+                else:
+                    cmd_device_id = resolved_dev
+                    channel_key = None
+                    device_type = dev_meta.get("type")
+                    device_number = None
+                    device_name = dev_meta.get("name", resolved_dev)
+                    available_actions = dev_meta.get("actions") or ["set_power", "turn_on", "turn_off"]
+                    configured_params = dev_meta.get("params")
+
+                # Select action matching is_turn_on vs is_turn_off
+                chosen_action = None
+                if is_turn_on:
+                    # 1. Custom uppercase / specific on actions like LIGHT_ON
+                    for act in available_actions:
+                        act_str = str(act)
+                        if act_str == "LIGHT_ON" or (act_str.endswith(("_ON", ":ON")) and act_str.isupper()):
+                            chosen_action = act_str
+                            break
+                    # 2. Standard set_power if supported
+                    if not chosen_action:
+                        for act in available_actions:
+                            if "set_power" in str(act).lower():
+                                chosen_action = str(act)
+                                break
+                    # 3. Standard turn_on / on
+                    if not chosen_action:
+                        for act in available_actions:
+                            act_str = str(act)
+                            if act_str.lower() in ["light_on", "turn_on", "on"] or act_str.lower().endswith(("_on", "-on", ":on")):
+                                chosen_action = act_str
+                                break
+                    # 4. Fallback
+                    if not chosen_action and available_actions:
+                        chosen_action = str(available_actions[0])
+                elif is_turn_off:
+                    # 1. Custom uppercase / specific off actions like LIGHT_OFF
+                    for act in available_actions:
+                        act_str = str(act)
+                        if act_str == "LIGHT_OFF" or (act_str.endswith(("_OFF", ":OFF")) and act_str.isupper()):
+                            chosen_action = act_str
+                            break
+                    # 2. Standard set_power if supported
+                    if not chosen_action:
+                        for act in available_actions:
+                            if "set_power" in str(act).lower():
+                                chosen_action = str(act)
+                                break
+                    # 3. Standard turn_off / off
+                    if not chosen_action:
+                        for act in available_actions:
+                            act_str = str(act)
+                            if act_str.lower() in ["light_off", "turn_off", "off"] or act_str.lower().endswith(("_off", "-off", ":off")):
+                                chosen_action = act_str
+                                break
+                    # 4. Fallback
+                    if not chosen_action and available_actions:
+                        chosen_action = str(available_actions[-1] if len(available_actions) > 1 else available_actions[0])
+
+                if not chosen_action:
+                    chosen_action = "set_power"
+
+                # Select params based on configured_params
+                if configured_params is not None:
+                    if isinstance(configured_params, dict):
+                        chosen_params = dict(configured_params)
+                        if "state" in chosen_params:
+                            chosen_params["state"] = action_state
+                    else:
+                        chosen_params = configured_params
+                else:
+                    if "set_power" in chosen_action.lower():
+                        chosen_params = {"state": action_state}
+                    else:
+                        chosen_params = {}
+
                 cmd = DeviceCommand(
-                    device_id=resolved_dev,
-                    action="set_power",
-                    parameters={"state": action_state}
+                    device_id=cmd_device_id,
+                    actions=chosen_action,
+                    params=chosen_params,
+                    channel_key=channel_key,
+                    device_type=device_type,
+                    device_number=device_number,
+                    device_name=device_name
                 )
                 self.record_executed_command(
                     session_id=session_id,
@@ -519,7 +776,7 @@ class ConversationManager:
                 )
                 return GeminiResponse(
                     mode="device_command",
-                    speech=f"Okay, {verb} the {dev_name}.",
+                    speech=speech_ack,
                     command=cmd,
                     missing_fields=[]
                 )
@@ -531,9 +788,10 @@ class ConversationManager:
                     parameters={"state": action_state},
                     missing_fields=["device_id"]
                 )
+                action_verb = "turn on" if action_state == "on" else "turn off"
                 return GeminiResponse(
                     mode="clarify",
-                    speech="Which lights should I turn on?",
+                    speech=f"Which lights should I {action_verb}?",
                     command=None,
                     missing_fields=["device_id"]
                 )

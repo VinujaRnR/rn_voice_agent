@@ -73,6 +73,17 @@ class AssistantApp {
         }
       });
     });
+
+    // Populate device count badge in navigation bar
+    fetch('/api/devices')
+      .then(res => res.json())
+      .then(data => {
+        const badge = document.getElementById('nav-badge-count');
+        if (badge && data.total_devices) {
+          badge.textContent = `${data.total_devices} Devices`;
+        }
+      })
+      .catch(() => {});
   }
 
   /**
@@ -229,13 +240,17 @@ class AssistantApp {
       this.setState(AssistantState.WAITING_FOR_HUB);
       this.appendMessage('Sarah', displayText);
 
-      // Speak confirmation through TTS
+      // Speak initial dispatch confirmation through TTS
       this.speakAssistantResponse(speechText, () => {
-        // After speaking confirmation, show completed state
-        this.setState(AssistantState.COMPLETED);
-        setTimeout(() => {
-          this.returnToListeningOrReady();
-        }, 2200);
+        const cmdId = data.command.command_id;
+        if (cmdId) {
+          this.pollCommandOutcome(cmdId, devName);
+        } else {
+          this.setState(AssistantState.COMPLETED);
+          setTimeout(() => {
+            this.returnToListeningOrReady();
+          }, 2200);
+        }
       });
       return;
     }
@@ -317,6 +332,41 @@ class AssistantApp {
     if (this.isTTSSpeaking) return; // Do not resume if still speaking
     if (window.SpeechController && typeof window.SpeechController.resumeRecognition === 'function') {
       window.SpeechController.resumeRecognition();
+    }
+  }
+
+  async pollCommandOutcome(commandId, deviceName, retries = 5) {
+    try {
+      const res = await fetch(`/api/commands/${encodeURIComponent(commandId)}?wait=true&timeout=2.0`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.state === 'completed') {
+          this.setState(AssistantState.COMPLETED);
+          const outcomeText = data.speech_outcome || `The ${deviceName} has been updated.`;
+          this.appendMessage('Sarah', outcomeText);
+          this.speakAssistantResponse(outcomeText, () => {
+            setTimeout(() => this.returnToListeningOrReady(), 1500);
+          });
+          return;
+        } else if (data.state === 'failed' || data.state === 'rejected') {
+          this.setState(AssistantState.FAILED);
+          const failText = data.speech_outcome || `Execution failed on ${deviceName}.`;
+          this.appendMessage('Sarah', failText, true);
+          this.speakAssistantResponse(failText, () => {
+            setTimeout(() => this.returnToListeningOrReady(), 2000);
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Poll command error:', e);
+    }
+
+    if (retries > 0) {
+      setTimeout(() => this.pollCommandOutcome(commandId, deviceName, retries - 1), 1000);
+    } else {
+      this.setState(AssistantState.COMPLETED);
+      setTimeout(() => this.returnToListeningOrReady(), 1500);
     }
   }
 

@@ -1,0 +1,164 @@
+================================================================================
+                    RN VOICE ASSISTANT - COMMAND CHEATSHEET
+================================================================================
+
+--------------------------------------------------------------------------------
+1. ENVIRONMENT SETUP & VIRTUAL ENVIRONMENT
+--------------------------------------------------------------------------------
+# Create virtual environment (Python 3.12)
+python3 -m venv .venv
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Install required dependencies
+pip install -r requirements.txt
+
+# Verify RabbitMQ host TCP reachability (adjust host and port as needed)
+nc -vz 127.0.0.1 5672
+nc -vz BROKER_HOST 5671
+
+
+--------------------------------------------------------------------------------
+2. RUNNING THE WEB APPLICATION & DEV SERVER
+--------------------------------------------------------------------------------
+# Start FastAPI backend with automatic hot-reload (recommended for development)
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Start without hot-reload (production/daemon mode)
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# Open the assistant interface in your browser:
+# Voice Assistant: http://localhost:8000/ or http://127.0.0.1:8000/
+# Devices & Nodes Table: http://localhost:8000/devices.html
+
+# Verify service health:
+curl -s http://127.0.0.1:8000/health
+
+
+--------------------------------------------------------------------------------
+3. RUNNING TEST SUITES (PYTEST)
+--------------------------------------------------------------------------------
+# Run all tests across the entire workspace (all 65+ tests)
+pytest -v
+
+# Run Step 12 RabbitMQ command publishing and result consumer tests
+pytest tests/test_step12_publish_and_consume.py -v
+
+# Run predefined devices data table JSON & Node ID tests
+pytest tests/test_devices_data_table.py -v
+
+# Run RabbitMQ connection manager and publisher/consumer tests
+pytest tests/test_rabbitmq_connection.py -v
+
+# Run RN Hub device registry & security validator tests
+pytest tests/test_commands_contract.py -v
+
+# Run multi-turn conversation & clarification loop tests
+pytest tests/test_conversation_clarification.py -v
+
+# Run Gemini structured schema output tests
+pytest tests/test_gemini_schemas.py -v
+
+# Run Speech-to-Text (STT) Whisper & Gemini audio transcription tests
+pytest tests/test_stt.py -v
+
+# Run Tool Agent tests (Weather, Time, Web Search, Places in Colombo)
+pytest tests/test_tools_and_agent.py -v
+
+# Run Fast API routes & chat endpoint integration tests
+pytest tests/test_main.py -v
+
+
+--------------------------------------------------------------------------------
+4. API TESTING WITH CURL (CHAT & DEVICE COMMANDS)
+--------------------------------------------------------------------------------
+# A. General Knowledge / Voice Assistant Query
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the capital of Sri Lanka?", "session_id": "test_chat"}'
+
+# B. Device Command: Turn ON Testing Farm Lights (Triggers RabbitMQ Step 12 flow)
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Turn on the testing farm lights", "session_id": "test_cmd"}'
+
+# C. Device Command: Turn OFF Testing Farm Lights
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Turn off the testing farm lights", "session_id": "test_cmd"}'
+
+# D. Multi-Turn Clarification Test (Turn 1: Ambiguous device)
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Turn on the lights", "session_id": "session_clarify_01"}'
+
+# E. Multi-Turn Clarification Test (Turn 2: User clarifies target device)
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "The farm lights", "session_id": "session_clarify_01"}'
+
+# F. Tool Execution: Live Weather
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What is the weather in Colombo?", "session_id": "test_weather"}'
+
+# G. Tool Execution: World Time
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What time is it in Tokyo and Colombo?", "session_id": "test_time"}'
+
+# H. Tool Execution: Web Search / Places Discovery
+curl -s -X POST http://127.0.0.1:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Find the best sushi places in Colombo", "session_id": "test_places"}'
+
+
+--------------------------------------------------------------------------------
+5. COMMAND LIFECYCLE & STATUS QUERY API (STEP 12)
+--------------------------------------------------------------------------------
+# Query execution status of a specific command by ID:
+curl -s http://127.0.0.1:8000/api/commands/<COMMAND_ID>
+
+# Long-poll command status until completion (wait up to 5 seconds):
+curl -s "http://127.0.0.1:8000/api/commands/<COMMAND_ID>?wait=true&timeout=5.0"
+
+
+--------------------------------------------------------------------------------
+6. SPEECH-TO-TEXT (STT) & AUDIO TESTING
+--------------------------------------------------------------------------------
+# Test audio file upload for chat turn (returns assistant speech and response)
+curl -s -X POST http://127.0.0.1:8000/api/chat/audio \
+  -F "file=@path/to/recording.wav" \
+  -F "session_id=audio_session"
+
+# Test raw STT transcription endpoint
+curl -s -X POST http://127.0.0.1:8000/api/stt \
+  -F "file=@path/to/recording.wav"
+
+
+--------------------------------------------------------------------------------
+7. SQLITE DATABASE & DATA TABLE INSPECTION
+--------------------------------------------------------------------------------
+# Check SQLite tables
+sqlite3 voice_assistant.db ".tables"
+
+# View recent executed command history and lifecycle states
+sqlite3 voice_assistant.db "SELECT id, command_id, action, target_device, state, timestamp, updated_at FROM command_history ORDER BY id DESC LIMIT 10;"
+
+# View recent conversation messages
+sqlite3 voice_assistant.db "SELECT session_id, role, content, timestamp FROM messages ORDER BY id DESC LIMIT 10;"
+
+# Inspect predefined devices data table JSON
+cat data/devices.json | python3 -m json.tool | head -n 40
+
+# Check device list via Python CLI
+python3 -c "from app.commands.device_registry import device_registry; import json; print(json.dumps(device_registry.list_devices(), indent=2))"
+
+
+--------------------------------------------------------------------------------
+8. QUICK TEST ONE-LINER (VERIFY EVERYTHING)
+--------------------------------------------------------------------------------
+# Runs full pytest test suite and verifies all components
+pytest -v && curl -s http://127.0.0.1:8000/health
+================================================================================

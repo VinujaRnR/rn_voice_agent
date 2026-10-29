@@ -100,8 +100,8 @@ async def test_clarification_resolution_pass_condition():
         assert data2["mode"] == "device_command"
         assert data2["command"] is not None
         assert data2["command"]["device_id"] == "98a316e6b658"
-        assert data2["command"]["action"] == "set_power"
-        assert data2["command"]["parameters"]["state"] == "on"
+        assert (data2["command"].get("actions") or data2["command"].get("action")) == "set_power"
+        assert (data2["command"].get("params") or data2["command"].get("parameters"))["state"] == "on"
         assert "Sending the command to RN Hub" in data2["speech"]
 
 
@@ -147,8 +147,8 @@ async def test_jarvis_room_lights_command():
         data = res.json()
         assert data["mode"] == "device_command"
         assert data["command"]["device_id"] == "room_lights"
-        assert data["command"]["action"] == "set_power"
-        assert data["command"]["parameters"]["state"] == "on"
+        assert (data["command"].get("actions") or data["command"].get("action")) == "set_power"
+        assert (data["command"].get("params") or data["command"].get("parameters"))["state"] == "on"
 
 
 @pytest.mark.asyncio
@@ -176,8 +176,8 @@ async def test_alexa_wake_word_and_kitchen_lights():
         data_cmd = res_cmd.json()
         assert data_cmd["mode"] == "device_command"
         assert data_cmd["command"]["device_id"] == "kitchen_lights"
-        assert data_cmd["command"]["action"] == "set_power"
-        assert data_cmd["command"]["parameters"]["state"] == "on"
+        assert (data_cmd["command"].get("actions") or data_cmd["command"].get("action")) == "set_power"
+        assert (data_cmd["command"].get("params") or data_cmd["command"].get("parameters"))["state"] == "on"
 
 
 

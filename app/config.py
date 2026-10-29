@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # Gemini AI Configuration
     # ==========================================
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
 
     # ==========================================
     # RabbitMQ Remote Broker Connection
@@ -36,9 +36,19 @@ class Settings(BaseSettings):
     # ==========================================
     # RabbitMQ Command Routing Configuration
     # ==========================================
-    rabbitmq_command_exchange: str = "rn.hub"
-    rabbitmq_command_queue: str = "commands"
-    rabbitmq_command_routing_key: str = "commands"
+    rabbitmq_command_exchange: str = "iot_commands"
+    rabbitmq_command_queue: str = "iot_exchange"
+    rabbitmq_command_routing_key: str = "iot.command"
+    rabbitmq_deadletter_exchange: str = "iot.deadletter"
+    rabbitmq_deadletter_queue: str = "iot_exchange.deadletter"
+    rabbitmq_result_exchange: str = "iot_commands"
+    rabbitmq_result_queue: str = "results"
+    rabbitmq_result_routing_key: str = "results"
+
+    # ==========================================
+    # Device Registry Data Table Configuration
+    # ==========================================
+    devices_data_file: str = "data/devices.json"
 
     # ==========================================
     # STT & Speech Configuration

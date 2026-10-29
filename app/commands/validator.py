@@ -176,11 +176,16 @@ class CommandValidator:
             clean_action = "set_power"
             params["state"] = "off"
 
-        allowed_actions = device.get("allowed_actions", [])
+        allowed_actions = set(a.lower() for a in (device.get("allowed_actions") or []))
+        allowed_actions.update(a.lower() for a in (device.get("actions") or []))
+        for sub in device.get("connected_devices", []):
+            allowed_actions.update(a.lower() for a in (sub.get("actions") or []))
+            allowed_actions.update(a.lower() for a in (sub.get("allowed_actions") or []))
+
         if clean_action not in allowed_actions:
             return ValidationResult(
                 is_valid=False,
-                message=f"Action '{action}' is not permitted for device '{device.get('name')}' ({device.get('type')}). Allowed actions: {allowed_actions}",
+                message=f"Action '{action}' is not permitted for device '{device.get('name')}' ({device.get('type')}). Allowed actions: {sorted(list(allowed_actions))}",
                 error_code="unsupported_action",
                 device=device
             )
@@ -188,14 +193,15 @@ class CommandValidator:
         # 5. Parameter Boundary Validation
         if clean_action == "set_power":
             state = str(params.get("state", "")).lower()
-            if state not in ["on", "off"]:
+            if "state" in params and state not in ["on", "off"]:
                 return ValidationResult(
                     is_valid=False,
                     message=f"Invalid power state '{params.get('state')}'. Expected 'on' or 'off'.",
                     error_code="invalid_parameters",
                     device=device
                 )
-            params["state"] = state
+            if state in ["on", "off"]:
+                params["state"] = state
 
         elif clean_action == "set_temperature":
             temp = params.get("temperature")
