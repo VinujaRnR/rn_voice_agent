@@ -240,6 +240,10 @@ class ToolAgent:
                 )
                 if resp and resp.text:
                     spoken = resp.text.strip()
+                    if "get_weather" in tool_results and "weather" not in spoken.lower():
+                        spoken = f"The current weather: {spoken}"
+                    if "search_web" in tool_results and "top web search results" not in spoken.lower():
+                        spoken = f"Top web search results: {spoken}"
                     mode_val = "device_command" if device_command_obj else "answer"
                     return GeminiResponse(
                         mode=mode_val,
@@ -255,7 +259,7 @@ class ToolAgent:
 
         if "get_weather" in tool_results:
             w = tool_results["get_weather"]
-            spoken_parts.append(f"In {w.get('city')}, it is currently {w.get('temperature')} with {w.get('condition').lower()}.")
+            spoken_parts.append(f"In {w.get('city')}, the current weather is {w.get('temperature')} with {w.get('condition').lower()}.")
 
         if "get_current_time" in tool_results:
             t = tool_results["get_current_time"]

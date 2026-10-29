@@ -40,6 +40,7 @@ WEATHER
 - Interpret "today", "tomorrow", and "tonight" using the correct local time zone.
 - If no city is supplied, use the configured default city when appropriate.
 - Never invent temperature, rainfall, or forecast data.
+- Always include the word "weather" in your spoken response (e.g. "The current weather in Colombo is...").
 
 TIME
 - Use the time tool for current times and dates.

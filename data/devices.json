@@ -92,6 +92,438 @@
       "enrolled": true,
       "id": "3417ebc3b479",
       "device_id": "3417ebc3b479"
+    },
+    {
+      "aliases": [
+        "testing farm lights",
+        "testing farm light",
+        "testing farm",
+        "farm lights",
+        "farm light",
+        "test farm lights",
+        "farm relay",
+        "lighting relay"
+      ],
+      "allowed_actions": [
+        "set_power",
+        "get_status",
+        "turn_on",
+        "turn_off"
+      ],
+      "auth_token": "esp_token_98a316e6b658",
+      "connected_devices": [
+        {
+          "channel": "Relay CH1",
+          "device_id": "farm_floodlight_1",
+          "name": "Farm Perimeter Floodlight",
+          "status": "online",
+          "type": "light"
+        },
+        {
+          "channel": "Relay CH2",
+          "device_id": "greenhouse_grow_lamp",
+          "name": "Greenhouse Grow Lamp",
+          "status": "online",
+          "type": "light"
+        }
+      ],
+      "connected_devices_count": 2,
+      "connection": "USB-connected ESP8266",
+      "enrolled": true,
+      "location": "Farm / Greenhouse",
+      "mac_address": "98:a3:16:e6:b6:58",
+      "name": "Testing Farm Lights",
+      "node_id": "NODE-ESP8266-01",
+      "online_status": "Reported by RN Hub",
+      "power_state": "off",
+      "scheduled_rules": {
+        "allowed_actions": [
+          "set_power",
+          "turn_on",
+          "turn_off"
+        ],
+        "max_delay_minutes": 180,
+        "max_duration_minutes": 720,
+        "min_delay_minutes": 1
+      },
+      "status": "online",
+      "type": "Relay",
+      "id": "98a316e6b658",
+      "device_id": "98a316e6b658"
+    },
+    {
+      "aliases": [
+        "manipulator arm",
+        "robot arm",
+        "arm gripper"
+      ],
+      "allowed_actions": [
+        "home",
+        "grasp",
+        "release"
+      ],
+      "auth_token": "robot_token_arm",
+      "connected_devices": [
+        {
+          "device_id": "servo_wrist",
+          "name": "Digital Servo Wrist Joint",
+          "status": "online",
+          "type": "actuator"
+        },
+        {
+          "device_id": "parallel_gripper",
+          "name": "Pneumatic/Servo Gripper Claws",
+          "status": "online",
+          "type": "actuator"
+        }
+      ],
+      "connected_devices_count": 2,
+      "connection": "CAN bus / USB-Serial",
+      "enrolled": true,
+      "location": "Robot Upper Deck",
+      "name": "Robot 6-DOF Arm",
+      "node_id": "NODE-CAN-ARM-07",
+      "online_status": "Reported by RN Hub",
+      "power_state": "on",
+      "status": "idle",
+      "type": "arm",
+      "id": "arm_manipulator",
+      "device_id": "arm_manipulator"
+    },
+    {
+      "aliases": [
+        "desk lamp",
+        "desk light",
+        "study light",
+        "reading lamp",
+        "table lamp"
+      ],
+      "allowed_actions": [
+        "set_power",
+        "turn_on",
+        "turn_off"
+      ],
+      "auth_token": "wifi_token_desk_lamp",
+      "connected_devices": [
+        {
+          "device_id": "study_desk_led",
+          "name": "Study Desk Warm LED",
+          "socket": "Plug Socket 1",
+          "status": "online",
+          "type": "light"
+        }
+      ],
+      "connected_devices_count": 1,
+      "connection": "WiFi Smart Plug",
+      "enrolled": true,
+      "location": "Study / Office",
+      "name": "Desk Lamp",
+      "node_id": "NODE-WIFI-STUDY-04",
+      "online_status": "Reported by RN Hub",
+      "power_state": "off",
+      "scheduled_rules": {
+        "allowed_actions": [
+          "set_power",
+          "turn_on",
+          "turn_off"
+        ],
+        "max_delay_minutes": 180,
+        "min_delay_minutes": 1
+      },
+      "status": "online",
+      "type": "lighting",
+      "id": "desk_lamp",
+      "device_id": "desk_lamp"
+    },
+    {
+      "aliases": [
+        "kitchen lights",
+        "kitchen light"
+      ],
+      "allowed_actions": [
+        "set_power",
+        "turn_on",
+        "turn_off"
+      ],
+      "auth_token": "zigbee_token_kitchen_lights",
+      "connected_devices": [
+        {
+          "channel": "CH1",
+          "device_id": "kitchen_main_downlight",
+          "name": "Kitchen Main Downlight",
+          "status": "online",
+          "type": "light"
+        },
+        {
+          "channel": "CH2",
+          "device_id": "kitchen_counter_led",
+          "name": "Under-Cabinet Counter LED",
+          "status": "online",
+          "type": "light"
+        }
+      ],
+      "connected_devices_count": 2,
+      "connection": "Zigbee Gateway",
+      "enrolled": true,
+      "location": "Kitchen",
+      "name": "Kitchen Lights",
+      "node_id": "NODE-ZIGBEE-KIT-03",
+      "online_status": "Reported by RN Hub",
+      "power_state": "off",
+      "scheduled_rules": {
+        "allowed_actions": [
+          "set_power",
+          "turn_on",
+          "turn_off"
+        ],
+        "max_delay_minutes": 180,
+        "min_delay_minutes": 1
+      },
+      "status": "online",
+      "type": "lighting",
+      "id": "kitchen_lights",
+      "device_id": "kitchen_lights"
+    },
+    {
+      "aliases": [
+        "rn hub",
+        "main hub",
+        "master hub",
+        "central hub",
+        "hub controller",
+        "gateway hub"
+      ],
+      "allowed_actions": [
+        "get_status",
+        "restart",
+        "ping"
+      ],
+      "auth_token": "hub_master_token_01",
+      "connected_devices": [
+        {
+          "device_id": "98a316e6b658",
+          "name": "Testing Farm Lights",
+          "protocol": "USB-Serial",
+          "status": "online",
+          "type": "Relay"
+        },
+        {
+          "device_id": "room_lights",
+          "name": "Room Lights",
+          "protocol": "Zigbee",
+          "status": "online",
+          "type": "lighting"
+        },
+        {
+          "device_id": "kitchen_lights",
+          "name": "Kitchen Lights",
+          "protocol": "Zigbee",
+          "status": "online",
+          "type": "lighting"
+        },
+        {
+          "device_id": "desk_lamp",
+          "name": "Desk Lamp",
+          "protocol": "WiFi",
+          "status": "online",
+          "type": "lighting"
+        },
+        {
+          "device_id": "thermostat",
+          "name": "Thermostat",
+          "protocol": "WiFi",
+          "status": "online",
+          "type": "climate"
+        },
+        {
+          "device_id": "robot_base",
+          "name": "Robot Vacuum & Base",
+          "protocol": "ROS2",
+          "status": "online",
+          "type": "robot"
+        }
+      ],
+      "connected_devices_count": 6,
+      "connection": "Ethernet / CAN Gateway",
+      "enrolled": true,
+      "location": "Central Control Room",
+      "mac_address": "00:1a:2b:3c:4d:5e",
+      "name": "RN Main Control Hub",
+      "node_id": "NODE-HUB-MASTER-01",
+      "online_status": "Reported by RN Hub (Active)",
+      "power_state": "on",
+      "scheduled_rules": {
+        "allowed_actions": [
+          "get_status",
+          "ping"
+        ],
+        "max_delay_minutes": 60,
+        "min_delay_minutes": 1
+      },
+      "status": "online",
+      "type": "hub",
+      "id": "rn_hub_main",
+      "device_id": "rn_hub_main"
+    },
+    {
+      "aliases": [
+        "robot vacuum",
+        "robot base",
+        "robot chassis",
+        "chassis",
+        "mobile base"
+      ],
+      "allowed_actions": [
+        "start",
+        "stop",
+        "dock",
+        "move_forward",
+        "move_backward",
+        "turn_left",
+        "turn_right"
+      ],
+      "auth_token": "robot_token_base",
+      "connected_devices": [
+        {
+          "device_id": "lidar_scanner",
+          "name": "RPLiDAR A1 Scanner",
+          "status": "online",
+          "type": "sensor"
+        },
+        {
+          "device_id": "wheel_motors",
+          "name": "Dual Differential DC Motors",
+          "status": "online",
+          "type": "actuator"
+        },
+        {
+          "device_id": "cliff_sensors",
+          "name": "Infrared Bumper Array",
+          "status": "online",
+          "type": "sensor"
+        }
+      ],
+      "connected_devices_count": 3,
+      "connection": "Serial ROS2 Bridge",
+      "enrolled": true,
+      "location": "Docking Station",
+      "name": "Robot Vacuum & Base",
+      "node_id": "NODE-ROS2-ROBOT-06",
+      "online_status": "Reported by RN Hub",
+      "power_state": "on",
+      "status": "online",
+      "type": "robot",
+      "id": "robot_base",
+      "device_id": "robot_base"
+    },
+    {
+      "aliases": [
+        "room lights",
+        "room light",
+        "main lights",
+        "main light",
+        "living room lights",
+        "living room light",
+        "bedroom lights",
+        "ceiling lights"
+      ],
+      "allowed_actions": [
+        "set_power",
+        "turn_on",
+        "turn_off"
+      ],
+      "auth_token": "zigbee_token_room_lights",
+      "connected_devices": [
+        {
+          "device_id": "lr_ceiling_bulb_1",
+          "name": "Living Room Ceiling Bulb 1",
+          "socket": "E27",
+          "status": "online",
+          "type": "light"
+        },
+        {
+          "device_id": "lr_ceiling_bulb_2",
+          "name": "Living Room Ceiling Bulb 2",
+          "socket": "E27",
+          "status": "online",
+          "type": "light"
+        },
+        {
+          "channel": "PWM-RGB",
+          "device_id": "lr_ambient_led",
+          "name": "Living Room Ambient LED Strip",
+          "status": "online",
+          "type": "light"
+        }
+      ],
+      "connected_devices_count": 3,
+      "connection": "Zigbee Gateway",
+      "enrolled": true,
+      "location": "Living Room",
+      "name": "Room Lights",
+      "node_id": "NODE-ZIGBEE-LR-02",
+      "online_status": "Reported by RN Hub",
+      "power_state": "off",
+      "scheduled_rules": {
+        "allowed_actions": [
+          "set_power",
+          "turn_on",
+          "turn_off"
+        ],
+        "max_delay_minutes": 180,
+        "min_delay_minutes": 1
+      },
+      "status": "online",
+      "type": "lighting",
+      "id": "room_lights",
+      "device_id": "room_lights"
+    },
+    {
+      "aliases": [
+        "thermostat",
+        "air conditioner",
+        "ac unit"
+      ],
+      "allowed_actions": [
+        "set_temperature",
+        "set_mode",
+        "set_power"
+      ],
+      "auth_token": "hvac_token_thermostat",
+      "connected_devices": [
+        {
+          "device_id": "ac_compressor",
+          "name": "AC Inverter Unit",
+          "status": "online",
+          "type": "hvac"
+        },
+        {
+          "device_id": "temp_humidity_sensor",
+          "name": "DHT22 Climate Sensor",
+          "status": "online",
+          "type": "sensor"
+        }
+      ],
+      "connected_devices_count": 2,
+      "connection": "WiFi HVAC Controller",
+      "enrolled": true,
+      "location": "Hallway",
+      "name": "Thermostat",
+      "node_id": "NODE-HVAC-05",
+      "online_status": "Reported by RN Hub",
+      "power_state": "on",
+      "scheduled_rules": {
+        "allowed_actions": [
+          "set_temperature",
+          "set_power"
+        ],
+        "max_delay_minutes": 360,
+        "min_delay_minutes": 1
+      },
+      "status": "online",
+      "type": "climate",
+      "id": "thermostat",
+      "device_id": "thermostat"
     }
   ]
 }

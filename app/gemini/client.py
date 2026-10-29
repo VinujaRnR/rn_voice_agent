@@ -85,11 +85,21 @@ class GeminiClient:
                 response_schema=GeminiResponse,
             )
 
-            response = await self.client.aio.models.generate_content(
-                model=self.model,
-                contents=contents,
-                config=config,
-            )
+            for attempt in range(2):
+                try:
+                    response = await self.client.aio.models.generate_content(
+                        model=self.model,
+                        contents=contents,
+                        config=config,
+                    )
+                    break
+                except Exception as ex:
+                    ex_msg = str(ex)
+                    if ("503" in ex_msg or "UNAVAILABLE" in ex_msg or "high demand" in ex_msg) and attempt == 0:
+                        logger.warning("Gemini 503 spike, retrying after 1s...")
+                        await asyncio.sleep(1.0)
+                        continue
+                    raise
 
             if not response.text:
                 return GeminiResponse(
@@ -124,9 +134,4 @@ class GeminiClient:
                     command=None,
                     missing_fields=[]
                 )
-            return GeminiResponse(
-                mode="answer",
-                speech="I encountered an error processing your request.",
-                command=None,
-                missing_fields=[]
-            )
+            return None
