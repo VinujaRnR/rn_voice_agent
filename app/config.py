@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # ==========================================
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_thinking_budget: int = 1024
+    gemini_reasoning_enabled: bool = True
+    gemini_temperature: float = 0.2
 
     # ==========================================
     # RabbitMQ Remote Broker Connection
@@ -56,6 +59,15 @@ class Settings(BaseSettings):
     whisper_model: str = "base.en"
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
+    whisper_beam_size: int = 5
+    whisper_initial_prompt: str = (
+        "Sarah, turn on testing farm lights, room lights, kitchen lights, desk lamp, "
+        "thermostat, Colombo, Sri Lanka, weather, temperature, schedule, status."
+    )
+    audio_preprocess_enabled: bool = True
+    audio_target_peak: float = 0.90
+    audio_noise_reduction_enabled: bool = True
+    audio_silence_trim_enabled: bool = True
     stt_engine: str = "gemini"
 
     model_config = SettingsConfigDict(

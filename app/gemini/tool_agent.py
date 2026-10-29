@@ -229,15 +229,45 @@ class ToolAgent:
         # 2. If Gemini client is live and configured, generate model synthesis with tool evidence
         if self.client and settings.gemini_api_key:
             try:
-                evidence_text = f"\nUser Query: {query}\nDynamic Context: {json.dumps(ctx)}\nVerified Tool Results: {json.dumps(tool_results)}"
-                resp = await self.client.aio.models.generate_content(
-                    model=self.model_name,
-                    contents=evidence_text,
-                    config=types.GenerateContentConfig(
-                        system_instruction=self.system_prompt,
-                        temperature=0.3
-                    )
+                evidence_text = (
+                    f"User Query: {query}\n"
+                    f"Dynamic Context: {json.dumps(ctx)}\n"
+                    f"Verified Tool Results: {json.dumps(tool_results)}\n"
+                    "Instructions: Synthesize the verified tool evidence into a clear, accurate, natural voice response."
                 )
+
+                thinking_config = None
+                budget = getattr(settings, "gemini_thinking_budget", 1024)
+                if budget > 0 and types and hasattr(types, "ThinkingConfig"):
+                    try:
+                        thinking_config = types.ThinkingConfig(thinking_budget=budget)
+                    except Exception:
+                        pass
+
+                config_kwargs = {
+                    "system_instruction": self.system_prompt,
+                    "temperature": getattr(settings, "gemini_temperature", 0.2),
+                }
+                if thinking_config is not None:
+                    config_kwargs["thinking_config"] = thinking_config
+
+                try:
+                    resp = await self.client.aio.models.generate_content(
+                        model=self.model_name,
+                        contents=evidence_text,
+                        config=types.GenerateContentConfig(**config_kwargs)
+                    )
+                except Exception as mex:
+                    if "thinking" in str(mex).lower() and "thinking_config" in config_kwargs:
+                        config_kwargs.pop("thinking_config", None)
+                        resp = await self.client.aio.models.generate_content(
+                            model=self.model_name,
+                            contents=evidence_text,
+                            config=types.GenerateContentConfig(**config_kwargs)
+                        )
+                    else:
+                        raise
+
                 if resp and resp.text:
                     spoken = resp.text.strip()
                     if "get_weather" in tool_results and "weather" not in spoken.lower():
@@ -245,7 +275,9 @@ class ToolAgent:
                     if "search_web" in tool_results and "top web search results" not in spoken.lower():
                         spoken = f"Top web search results: {spoken}"
                     mode_val = "device_command" if device_command_obj else "answer"
+                    reasoning_trace = f"Synthesized evidence from executed tools: {list(tool_results.keys())}."
                     return GeminiResponse(
+                        reasoning=reasoning_trace,
                         mode=mode_val,
                         speech=spoken,
                         command=device_command_obj,

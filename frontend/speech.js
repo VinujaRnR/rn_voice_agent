@@ -236,6 +236,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleFastAPIResponse(data) {
     if (!data) return;
+    if (data.reasoning) {
+      console.log('%c[Sarah Reasoning / Chain-of-Thought]:', 'color: #3b82f6; font-weight: bold;', data.reasoning);
+    }
     if (window.App && typeof window.App.handleAssistantResponse === 'function') {
       window.App.handleAssistantResponse(data);
       return;
@@ -604,7 +607,15 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 16000
+        }
+      });
       audioChunks = [];
       mediaRecorder = new MediaRecorder(stream);
       mediaRecorder.ondataavailable = (e) => {

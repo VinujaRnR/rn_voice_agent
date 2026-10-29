@@ -84,3 +84,101 @@ def test_accent_normalizer_phonetic_variations():
     assert normalize_accent_transcript("turn of the lights") == "turn off the lights"
     assert normalize_accent_transcript("sarah switch of the rum lights") == "Sarah switch off the room lights"
 
+
+def _create_test_wav_bytes(
+    samples_list,
+    sample_rate: int = 16000,
+    n_channels: int = 1
+) -> bytes:
+    """Helper to create valid 16-bit PCM WAV bytes."""
+    import io
+    import wave
+    import array
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(n_channels)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        arr = array.array("h", samples_list)
+        wf.writeframes(arr.tobytes())
+    return buf.getvalue()
+
+
+def test_audio_preprocessor_gain_normalization():
+    """Verify that quiet speech audio is amplified to optimal target peak."""
+    from app.stt.audio_preprocessor import AudioPreprocessor
+    import wave
+    import array
+    import io
+
+    # Generate quiet signal (peak = 2000, ~6% of full scale)
+    quiet_samples = [2000, -2000, 1500, -1500] * 4000  # 1 second
+    raw_wav = _create_test_wav_bytes(quiet_samples, 16000, 1)
+
+    preprocessor = AudioPreprocessor(target_peak=0.90)
+    processed_wav, resolved_mime = preprocessor.preprocess(raw_wav, mime_type="audio/wav")
+
+    assert resolved_mime == "audio/wav"
+    assert processed_wav != raw_wav
+
+    with wave.open(io.BytesIO(processed_wav), "rb") as wf:
+        frames = wf.readframes(wf.getnframes())
+        samples = array.array("h")
+        samples.frombytes(frames)
+        peak = max(abs(s) for s in samples)
+        # Target peak is 0.90 * 32767 = ~29490
+        assert 28000 <= peak <= 30000
+
+
+def test_audio_preprocessor_dc_offset_removal():
+    """Verify that DC offset shifting the waveform is removed."""
+    from app.stt.audio_preprocessor import AudioPreprocessor
+    import array
+
+    # 1000 DC offset bias added to waveform
+    biased_samples = array.array("h", [1500, 500, 1200, 800] * 100)
+    preprocessor = AudioPreprocessor()
+    centered = preprocessor.remove_dc_offset(biased_samples)
+
+    mean_after = sum(centered) / len(centered)
+    assert abs(mean_after) < 1.0
+
+
+def test_audio_preprocessor_silence_trimming():
+    """Verify that excessive leading and trailing silence are trimmed."""
+    from app.stt.audio_preprocessor import AudioPreprocessor
+    import wave
+    import io
+
+    # 1 sec silence, 0.5 sec speech, 1 sec silence
+    silence = [0] * 16000
+    speech = [15000, -15000] * 4000
+    all_samples = silence + speech + silence
+    raw_wav = _create_test_wav_bytes(all_samples, 16000, 1)
+
+    preprocessor = AudioPreprocessor(enable_silence_trim=True)
+    processed_wav, _ = preprocessor.preprocess(raw_wav)
+
+    with wave.open(io.BytesIO(processed_wav), "rb") as wf:
+        n_frames = wf.getnframes()
+        # Original was 40000 frames (2.5s). Trimmed should be around ~10000-15000 frames (< 1.5s)
+        assert n_frames < 25000
+
+
+def test_audio_preprocessor_stereo_to_mono():
+    """Verify that stereo 2-channel audio is downmixed to mono."""
+    from app.stt.audio_preprocessor import AudioPreprocessor
+    import wave
+    import io
+
+    # Interleaved stereo: L, R, L, R...
+    stereo_samples = [5000, 10000, -5000, -10000] * 2000
+    raw_wav = _create_test_wav_bytes(stereo_samples, 16000, 2)
+
+    preprocessor = AudioPreprocessor()
+    processed_wav, _ = preprocessor.preprocess(raw_wav)
+
+    with wave.open(io.BytesIO(processed_wav), "rb") as wf:
+        assert wf.getnchannels() == 1
+

@@ -217,9 +217,12 @@ class AssistantApp {
 
   /**
    * Handles Gemini structured response, command states, and TTS playback
-   */
   async handleAssistantResponse(data) {
     if (!data) return;
+
+    if (data.reasoning) {
+      console.log('%c[Sarah Reasoning / Chain-of-Thought]:', 'color: #3b82f6; font-weight: bold;', data.reasoning);
+    }
 
     let speechText = data.speech || '';
     let displayText = speechText;

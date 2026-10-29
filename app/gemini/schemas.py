@@ -131,6 +131,17 @@ class ReminderSpec(BaseModel):
 
 
 class GeminiResponse(BaseModel):
+    reasoning: Optional[str] = Field(
+        default=None,
+        description=(
+            "Internal step-by-step reasoning trace and Chain-of-Thought analysis before deciding action. "
+            "1. Deconstruct user goal, tone, and context. "
+            "2. Resolve pronouns ('it', 'them') and temporal references against conversation history. "
+            "3. Cross-reference registered device IDs, allowed actions, and safety rules. "
+            "4. Determine whether clarification is necessary (ambiguous target) or direct execution is valid. "
+            "5. Plan concise, warm, Alexa-style speech."
+        )
+    )
     mode: Literal[
         "answer",
         "clarify",

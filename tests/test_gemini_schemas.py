@@ -114,3 +114,39 @@ def test_invalid_responses_never_reach_executor():
         missing_fields=[]
     )
     assert answer.is_executable() is False
+
+
+def test_valid_response_with_chain_of_thought_reasoning():
+    """Verify that GeminiResponse properly accepts and exposes internal reasoning traces."""
+    data = {
+        "reasoning": "User asked what the weather is in Colombo. Intent is weather inquiry. No device control needed.",
+        "mode": "answer",
+        "speech": "The weather in Colombo is 28 degrees and sunny.",
+        "command": None,
+        "missing_fields": []
+    }
+    response = GeminiResponse.model_validate(data)
+    assert response.reasoning is not None
+    assert "Intent is weather inquiry" in response.reasoning
+    assert response.mode == "answer"
+
+
+def test_device_command_with_reasoning():
+    """Verify device command with step-by-step reasoning."""
+    data = {
+        "reasoning": "User requested 'turn on testing farm lights'. Target device is '98a316e6b658'. Action is 'set_power' with state='on'.",
+        "mode": "device_command",
+        "speech": "Okay, turning on the testing farm lights.",
+        "command": {
+            "device_id": "98a316e6b658",
+            "action": "set_power",
+            "parameters": {
+                "state": "on"
+            }
+        },
+        "missing_fields": []
+    }
+    response = GeminiResponse.model_validate(data)
+    assert response.reasoning is not None
+    assert response.is_executable() is True
+    assert response.command.device_id == "98a316e6b658"

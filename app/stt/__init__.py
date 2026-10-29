@@ -2,7 +2,26 @@
 from typing import Union, BinaryIO, Optional
 from unittest.mock import Mock, AsyncMock
 
-from app.config import settings
+try:
+    from app.config import settings
+except ImportError:
+    class DummySettings:
+        stt_engine = "gemini"
+        whisper_model = "base.en"
+        whisper_device = "cpu"
+        whisper_compute_type = "int8"
+        whisper_beam_size = 5
+        whisper_initial_prompt = (
+            "Sarah, turn on testing farm lights, room lights, kitchen lights, desk lamp, "
+            "thermostat, Colombo, Sri Lanka, weather, temperature, schedule, status."
+        )
+        audio_preprocess_enabled = True
+        audio_target_peak = 0.90
+        audio_noise_reduction_enabled = True
+        audio_silence_trim_enabled = True
+    settings = DummySettings()
+
+from app.stt.audio_preprocessor import audio_preprocessor, AudioPreprocessor
 from app.stt.gemini_audio_service import gemini_audio_service, GeminiAudioSTTService
 from app.stt.whisper_service import whisper_service, WhisperSTTService
 
@@ -35,11 +54,19 @@ class UnifiedSTTService:
         mime_type: Optional[str] = None,
         filename: Optional[str] = None
     ) -> str:
+        # 1. Acoustically condition, filter, and normalize audio before STT inference
+        processed_input, resolved_mime = audio_preprocessor.preprocess(
+            audio_input,
+            mime_type=mime_type,
+            filename=filename
+        )
+
+        # 2. Transcribe using active engine
         engine = self.active_engine
         if isinstance(engine, GeminiAudioSTTService):
-            return await engine.transcribe(audio_input, mime_type=mime_type, filename=filename)
+            return await engine.transcribe(processed_input, mime_type=resolved_mime, filename=filename)
         else:
-            return await engine.transcribe(audio_input)
+            return await engine.transcribe(processed_input)
 
     def transcribe_sync(
         self,
@@ -47,17 +74,27 @@ class UnifiedSTTService:
         mime_type: Optional[str] = None,
         filename: Optional[str] = None
     ) -> str:
+        # 1. Acoustically condition, filter, and normalize audio before STT inference
+        processed_input, resolved_mime = audio_preprocessor.preprocess(
+            audio_input,
+            mime_type=mime_type,
+            filename=filename
+        )
+
+        # 2. Transcribe using active engine
         engine = self.active_engine
         if isinstance(engine, GeminiAudioSTTService):
-            return engine.transcribe_sync(audio_input, mime_type=mime_type, filename=filename)
+            return engine.transcribe_sync(processed_input, mime_type=resolved_mime, filename=filename)
         else:
-            return engine.transcribe_sync(audio_input)
+            return engine.transcribe_sync(processed_input)
 
 
 stt_service = UnifiedSTTService()
 
 __all__ = [
     "stt_service",
+    "audio_preprocessor",
+    "AudioPreprocessor",
     "gemini_audio_service",
     "GeminiAudioSTTService",
     "whisper_service",

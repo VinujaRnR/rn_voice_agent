@@ -6,11 +6,22 @@ dialects, and noisy environments with zero local CPU/RAM compute overhead.
 import io
 import os
 import logging
-from typing import Union, BinaryIO, Optional
-from google import genai
-from google.genai import types
+from typing import Union, BinaryIO, Optional, Any
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
 
-from app.config import settings
+try:
+    from app.config import settings
+except ImportError:
+    class DummySettings:
+        gemini_api_key = ""
+        gemini_model = "gemini-3.5-flash-lite"
+    settings = DummySettings()
+
 from app.stt.accent_normalizer import normalize_accent_transcript
 
 logger = logging.getLogger(__name__)
@@ -36,11 +47,11 @@ class GeminiAudioSTTService:
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key or settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
         self.model_name = model or settings.gemini_model or "gemini-3.5-flash-lite"
-        self._client: Optional[genai.Client] = None
+        self._client: Optional[Any] = None
         self.service_name = "gemini_multimodal_audio"
 
     @property
-    def client(self) -> Optional[genai.Client]:
+    def client(self) -> Optional[Any]:
         if self._client is None and self.api_key:
             try:
                 self._client = genai.Client(api_key=self.api_key)
@@ -104,10 +115,20 @@ class GeminiAudioSTTService:
         if not audio_bytes:
             return ""
 
-        # 2. Determine MIME type
-        resolved_mime = mime_type or self.detect_mime_type(audio_bytes, filename)
+        # 2. Acoustically condition, filter, and normalize audio before STT inference
+        from app.stt.audio_preprocessor import audio_preprocessor
+        processed_audio, detected_mime = audio_preprocessor.preprocess(
+            audio_bytes,
+            mime_type=mime_type,
+            filename=filename
+        )
+        if isinstance(processed_audio, bytes):
+            audio_bytes = processed_audio
 
-        # 3. If client not available, fallback to faster_whisper
+        # 3. Determine MIME type
+        resolved_mime = detected_mime or mime_type or self.detect_mime_type(audio_bytes, filename)
+
+        # 4. If client not available, fallback to faster_whisper
         if not self.client:
             logger.warning("Gemini STT client unavailable, falling back to local Faster-Whisper.")
             from app.stt.whisper_service import whisper_service

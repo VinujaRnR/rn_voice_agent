@@ -1,10 +1,15 @@
-"""Gemini API client configuring structured output with GeminiResponse and cross-field validation."""
 import os
 import json
 import logging
+import asyncio
 from typing import Optional, List, Dict, Any
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
+
 from pydantic import ValidationError
 
 from app.config import settings
@@ -18,10 +23,10 @@ class GeminiClient:
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key or settings.gemini_api_key or os.environ.get("GEMINI_API_KEY", "")
         self.model = model or settings.gemini_model or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
-        self._client: Optional[genai.Client] = None
+        self._client: Optional[Any] = None
 
     @property
-    def client(self) -> genai.Client:
+    def client(self) -> Optional[Any]:
         import asyncio
         try:
             curr_loop = asyncio.get_running_loop()
@@ -68,6 +73,21 @@ class GeminiClient:
             except Exception:
                 pass
 
+            # Context Reasoning: Inject pending clarification state if active
+            if session_id:
+                try:
+                    from app.conversation.manager import conversation_manager
+                    pending = conversation_manager.get_pending_action(session_id)
+                    if pending and pending.get("missing_fields"):
+                        full_prompt_lines.append(
+                            f"\nPending Clarification Context: The user previously requested action '{pending.get('action')}' "
+                            f"with state '{pending.get('state')}' but device was ambiguous. "
+                            f"Missing fields: {pending.get('missing_fields')}. "
+                            "If user input clarifies the device or refers to it, resolve and execute immediately."
+                        )
+                except Exception:
+                    pass
+
             if conversation_history:
                 full_prompt_lines.append("\nPrevious Conversation:")
                 for msg in conversation_history[-6:]:
@@ -78,12 +98,26 @@ class GeminiClient:
             full_prompt_lines.append(prompt)
             contents = "\n".join(full_prompt_lines)
 
-            # Configure structured JSON output with GeminiResponse
-            config = types.GenerateContentConfig(
-                system_instruction=get_system_instruction(),
-                response_mime_type="application/json",
-                response_schema=GeminiResponse,
-            )
+            # Configure thinking config if supported by model/SDK
+            thinking_config = None
+            budget = getattr(settings, "gemini_thinking_budget", 1024)
+            if budget > 0 and types and hasattr(types, "ThinkingConfig"):
+                try:
+                    thinking_config = types.ThinkingConfig(thinking_budget=budget)
+                except Exception as te:
+                    logger.debug(f"ThinkingConfig init: {te}")
+
+            # Configure structured JSON output with GeminiResponse and thinking configuration
+            config_kwargs: Dict[str, Any] = {
+                "system_instruction": get_system_instruction(),
+                "response_mime_type": "application/json",
+                "response_schema": GeminiResponse,
+                "temperature": getattr(settings, "gemini_temperature", 0.2),
+            }
+            if thinking_config is not None:
+                config_kwargs["thinking_config"] = thinking_config
+
+            config = types.GenerateContentConfig(**config_kwargs)
 
             for attempt in range(2):
                 try:
@@ -95,6 +129,12 @@ class GeminiClient:
                     break
                 except Exception as ex:
                     ex_msg = str(ex)
+                    # If model does not support thinking_config, fall back gracefully
+                    if "thinking" in ex_msg.lower() and "thinking_config" in config_kwargs:
+                        logger.warning("Model rejected thinking_config, retrying without thinking budget...")
+                        config_kwargs.pop("thinking_config", None)
+                        config = types.GenerateContentConfig(**config_kwargs)
+                        continue
                     if ("503" in ex_msg or "UNAVAILABLE" in ex_msg or "high demand" in ex_msg) and attempt == 0:
                         logger.warning("Gemini 503 spike, retrying after 1s...")
                         await asyncio.sleep(1.0)
@@ -112,6 +152,8 @@ class GeminiClient:
             # Parse and validate with Pydantic (including cross-field validation)
             parsed_data = json.loads(response.text)
             gemini_response = GeminiResponse.model_validate(parsed_data)
+            if gemini_response.reasoning:
+                logger.info(f"[Sarah Reasoning]: {gemini_response.reasoning}")
             return gemini_response
 
         except ValidationError as ve:
