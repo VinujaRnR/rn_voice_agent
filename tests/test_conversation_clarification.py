@@ -326,3 +326,39 @@ async def test_sarah_wake_and_5_minute_silence_workflow():
         assert status_rewoken.json()["is_awake"] is True
 
 
+@pytest.mark.asyncio
+async def test_weather_context_clarification_loop():
+    """Verify that when user asks 'how is weather' without destination context,
+    Sarah asks where they are heading rather than assuming Colombo directly,
+    and then resolves the weather when the user clarifies their destination."""
+    transport = ASGITransport(app=app)
+    session_id = "test_weather_context_sess"
+
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Turn 1: User asks "how is weather" without context
+        res1 = await ac.post("/api/chat", json={
+            "session_id": session_id,
+            "text": "how is weather"
+        })
+        assert res1.status_code == 200
+        data1 = res1.json()
+        assert data1["mode"] == "answer"
+        speech1 = data1["speech"].lower()
+        # Sarah asks context / where user is going
+        assert "where" in speech1 or "heading" in speech1 or "going" in speech1
+        assert "weather" in speech1
+
+        # Turn 2: User provides context / destination
+        res2 = await ac.post("/api/chat", json={
+            "session_id": session_id,
+            "text": "I'm heading to Kandy"
+        })
+        assert res2.status_code == 200
+        data2 = res2.json()
+        assert data2["mode"] == "answer"
+        speech2 = data2["speech"].lower()
+        assert "kandy" in speech2
+        assert "°c" in speech2 or "weather" in speech2 or "degrees" in speech2
+
+
+

@@ -21,7 +21,14 @@ const AssistantState = {
 class AssistantApp {
   constructor() {
     this.currentState = AssistantState.READY;
-    this.sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
+    let savedSession = null;
+    try {
+      savedSession = localStorage.getItem('sarah_active_session_id');
+    } catch (e) {}
+    this.sessionId = savedSession || ('session_' + Math.random().toString(36).substring(2, 9));
+    try {
+      localStorage.setItem('sarah_active_session_id', this.sessionId);
+    } catch (e) {}
     this.isTTSSpeaking = false;
     this.resumeTimeout = null;
 
@@ -38,16 +45,57 @@ class AssistantApp {
     this.clearBtn = document.getElementById('clear-btn');
     this.wakeToggle = document.getElementById('wake-toggle');
 
+    // Reminder Banner Elements
+    this.reminderBanner = document.getElementById('reminder-alert-banner');
+    this.reminderBannerText = document.getElementById('reminder-banner-text');
+    this.reminderBannerClose = document.getElementById('reminder-banner-close');
+
+    // Track active processed reminder alerts persisted in localStorage
+    try {
+      const stored = localStorage.getItem('sarah_processed_reminders');
+      this.processedReminderIds = new Set(stored ? JSON.parse(stored) : []);
+    } catch (e) {
+      this.processedReminderIds = new Set();
+    }
+
     this._bindEvents();
+    this.startReminderPoller();
+    this.loadPreviousConversations();
   }
 
   _bindEvents() {
+    // Dismiss reminder banner
+    if (this.reminderBannerClose) {
+      this.reminderBannerClose.addEventListener('click', () => {
+        if (this.reminderBanner) {
+          this.reminderBanner.style.display = 'none';
+        }
+      });
+    }
     // Clear conversation history button
     if (this.clearBtn) {
-      this.clearBtn.addEventListener('click', () => {
+      this.clearBtn.addEventListener('click', async () => {
+        try {
+          await fetch('/api/chat/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: this.sessionId, clear_all: true })
+          });
+        } catch (e) {
+          console.warn('Note clearing history on server:', e);
+        }
+        try {
+          localStorage.removeItem('sarah_active_session_id');
+          this.sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
+          localStorage.setItem('sarah_active_session_id', this.sessionId);
+        } catch (e) {}
         if (this.conversationHistory) {
           this.conversationHistory.innerHTML = '';
+          this.appendMessage('Sarah', "I've cleared the entire conversation history.");
         }
+        this.speakAssistantResponse("I've cleared the entire conversation history.", () => {
+          this.returnToListeningOrReady();
+        });
       });
     }
 
@@ -151,7 +199,7 @@ class AssistantApp {
     return this.currentState;
   }
 
-  appendMessage(sender, text, isError = false) {
+  appendMessage(sender, text, isError = false, hash = null) {
     if (!this.conversationHistory) return;
     const card = document.createElement('div');
     card.className = `message-card ${sender.toLowerCase()} ${isError ? 'error-card' : ''}`;
@@ -166,8 +214,180 @@ class AssistantApp {
 
     card.appendChild(tag);
     card.appendChild(bubble);
+
+    if (hash) {
+      const hashBadge = document.createElement('span');
+      hashBadge.className = 'hash-badge';
+      hashBadge.textContent = `#${hash.substring(0, 8)}`;
+      hashBadge.title = `Cryptographic SHA-256 Hash: ${hash}\nStored permanently for future reference.`;
+      card.appendChild(hashBadge);
+    }
+
     this.conversationHistory.appendChild(card);
     this.conversationHistory.scrollTop = this.conversationHistory.scrollHeight;
+    return card;
+  }
+
+  /**
+   * Load stored previous conversations with their SHA-256 hashes for future reference
+   */
+  async loadPreviousConversations() {
+    try {
+      // 1. Try loading recent messages for this active session first
+      let messagesToRender = [];
+      let isCrossSession = false;
+
+      try {
+        const histRes = await fetch(`/api/chat/history?session_id=${encodeURIComponent(this.sessionId)}&limit=15`);
+        if (histRes.ok) {
+          const hData = await histRes.json();
+          if (hData.messages && hData.messages.length > 0) {
+            messagesToRender = hData.messages;
+          }
+        }
+      } catch (he) {}
+
+      // 2. If current session is empty, load recent cross-session references
+      if (messagesToRender.length === 0) {
+        const res = await fetch('/api/chat/references?limit=8');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.references && data.references.length > 0) {
+            messagesToRender = [...data.references].reverse();
+            isCrossSession = true;
+          }
+        }
+      }
+
+      if (messagesToRender.length > 0 && this.conversationHistory) {
+        // Clear starter mock messages
+        this.conversationHistory.innerHTML = '';
+        // Show reference divider
+        const divider = document.createElement('div');
+        divider.style.cssText = 'text-align: center; margin: 8px 0; font-size: 0.75rem; color: #64748b; font-weight: 500;';
+        divider.textContent = isCrossSession
+          ? '— Previous Conversation References (Hashed) —'
+          : '— Recent Conversation History —';
+        this.conversationHistory.appendChild(divider);
+
+        // Render in chronological order
+        for (const item of messagesToRender) {
+          const sender = item.role === 'user' ? 'User' : 'Sarah';
+          this.appendMessage(sender, item.content, false, item.content_hash);
+        }
+      }
+    } catch (e) {
+      console.debug('Note loading past conversations:', e);
+    }
+  }
+
+  /**
+   * Proactive Voice Assistant Reminder Poller:
+   * Polls backend every 2 seconds for scheduled reminders that have reached their due time.
+   * Proactively announces through TTS and displays a prominent visual banner.
+   */
+  startReminderPoller() {
+    if (this._reminderInterval) clearInterval(this._reminderInterval);
+
+    this._reminderInterval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/reminders/due');
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // Merge candidates from both triggered and recent_history
+        const rawCandidates = [...(data.triggered || []), ...(data.recent_history || [])];
+        const uniqueCandidates = [];
+        const seenInBatch = new Set();
+        for (const rem of rawCandidates) {
+          if (!rem || !rem.id || seenInBatch.has(rem.id)) continue;
+          seenInBatch.add(rem.id);
+          uniqueCandidates.push(rem);
+        }
+
+        const now = Date.now();
+        const dueReminders = uniqueCandidates.filter(rem => {
+          // 1. Skip if already alerted by this client session
+          if (this.processedReminderIds.has(rem.id)) return false;
+
+          // 2. Skip if acknowledged on backend
+          if (rem.status === 'acknowledged' || rem.acknowledged) return false;
+
+          // 3. Freshness check: only alert if due/triggered within the last 120 seconds
+          // Prevents replaying old reminders on page refresh
+          let trigTime = null;
+          if (typeof rem.triggered_timestamp === 'number') {
+            trigTime = rem.triggered_timestamp * 1000;
+          } else if (typeof rem.due_timestamp === 'number') {
+            trigTime = rem.due_timestamp * 1000;
+          } else if (rem.due_at_timestamp) {
+            trigTime = Number(rem.due_at_timestamp) * 1000;
+          } else if (rem.triggered_at) {
+            const parsed = new Date(rem.triggered_at).getTime();
+            if (!isNaN(parsed)) trigTime = parsed;
+          } else if (rem.due_at_iso) {
+            const parsed = new Date(rem.due_at_iso).getTime();
+            if (!isNaN(parsed)) trigTime = parsed;
+          }
+
+          if (trigTime !== null) {
+            const ageMs = now - trigTime;
+            // Must have fired within the last 120 seconds, and not in the distant future
+            if (ageMs > 120000 || ageMs < -15000) {
+              return false;
+            }
+          }
+
+          return true;
+        });
+
+        if (dueReminders.length > 0) {
+          const newlyDeliveredIds = [];
+          for (const rem of dueReminders) {
+            this.processedReminderIds.add(rem.id);
+            newlyDeliveredIds.push(rem.id);
+
+            const alertText = `Reminder alert: It's time to ${rem.text}.`;
+
+            // 1. Display notification banner
+            if (this.reminderBanner && this.reminderBannerText) {
+              this.reminderBannerText.textContent = `It's time to ${rem.text} (scheduled for ${rem.due_at})`;
+              this.reminderBanner.style.display = 'flex';
+            }
+
+            // 2. Add message to conversation history
+            this.appendMessage('Sarah', `🔔 ${alertText}`);
+
+            // 3. Proactively speak reminder through TTS
+            this.speakAssistantResponse(alertText, () => {
+              this.returnToListeningOrReady();
+            });
+          }
+
+          if (newlyDeliveredIds.length > 0) {
+            try {
+              // Maintain localStorage bounds (last 200 IDs)
+              const idsArray = Array.from(this.processedReminderIds);
+              if (idsArray.length > 200) {
+                this.processedReminderIds = new Set(idsArray.slice(-100));
+              }
+              localStorage.setItem('sarah_processed_reminders', JSON.stringify(Array.from(this.processedReminderIds)));
+
+              // Acknowledge to backend so it won't appear in subsequent polling
+              fetch('/api/reminders/ack', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reminder_ids: newlyDeliveredIds })
+              }).catch(() => {});
+            } catch (e) {
+              console.warn('Reminder acknowledge error:', e);
+            }
+          }
+        }
+      } catch (err) {
+        // Poller error note
+      }
+    }, 2000);
   }
 
   /**
@@ -207,6 +427,29 @@ class AssistantApp {
 
       const data = await response.json();
       await this.handleAssistantResponse(data);
+
+      // Attach cryptographic SHA-256 hashes to recent message cards
+      try {
+        const histRes = await fetch(`/api/chat/history?session_id=${encodeURIComponent(this.sessionId)}&limit=4`);
+        if (histRes.ok) {
+          const histData = await histRes.json();
+          if (histData.messages && histData.messages.length > 0) {
+            const cards = this.conversationHistory.querySelectorAll('.message-card');
+            const recentMsgs = histData.messages.slice(-cards.length);
+            for (let i = 0; i < recentMsgs.length; i++) {
+              const card = cards[cards.length - recentMsgs.length + i];
+              const msg = recentMsgs[i];
+              if (card && msg && msg.content_hash && !card.querySelector('.hash-badge')) {
+                const b = document.createElement('span');
+                b.className = 'hash-badge';
+                b.textContent = `#${msg.content_hash.substring(0, 8)}`;
+                b.title = `Cryptographic SHA-256 Hash: ${msg.content_hash}\nStored permanently for future reference.`;
+                card.appendChild(b);
+              }
+            }
+          }
+        }
+      } catch (he) {}
     } catch (err) {
       console.error('Chat error:', err);
       this.setState(AssistantState.FAILED, 'Connection Error');
@@ -217,6 +460,7 @@ class AssistantApp {
 
   /**
    * Handles Gemini structured response, command states, and TTS playback
+   */
   async handleAssistantResponse(data) {
     if (!data) return;
 
@@ -275,6 +519,18 @@ class AssistantApp {
         this.resumeMicrophoneRecognition();
       });
       return;
+    }
+
+    // If response is clearing history, empty past messages from UI before showing Sarah's response
+    if (displayText && displayText.toLowerCase().includes("cleared") && displayText.toLowerCase().includes("conversation")) {
+      if (this.conversationHistory) {
+        this.conversationHistory.innerHTML = '';
+      }
+      try {
+        localStorage.removeItem('sarah_active_session_id');
+        this.sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
+        localStorage.setItem('sarah_active_session_id', this.sessionId);
+      } catch (e) {}
     }
 
     // Normal Answer mode (Milestone 1 Pass Condition)

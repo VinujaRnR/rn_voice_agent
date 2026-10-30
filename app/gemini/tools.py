@@ -135,5 +135,66 @@ TOOLS: List[Dict[str, Any]] = [
             },
             "required": ["device_id", "action", "delay_minutes"]
         }
+    },
+    {
+        "name": "set_reminder",
+        "description": "Set a persistent scheduled reminder for the user when instructed to remind them about a task or event.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Clean reminder task description (e.g. 'take medicine', 'inspect the garden')."
+                },
+                "delay_minutes": {
+                    "type": "number",
+                    "description": "Delay in minutes until the reminder should trigger."
+                },
+                "delay_seconds": {
+                    "type": "integer",
+                    "description": "Optional delay in seconds until the reminder triggers."
+                },
+                "target_time": {
+                    "type": "string",
+                    "description": "Optional clock time (e.g. '4:30 PM', '16:00')."
+                }
+            },
+            "required": ["text"]
+        }
+    },
+    {
+        "name": "list_reminders",
+        "description": "List all active, pending reminders currently scheduled for the user.",
+        "parameters": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "cancel_reminder",
+        "description": "Cancel or clear active scheduled reminders. If user says 'cancel reminder' or 'cancel reminders' without specifying which, set reminder_id='all'. If user specifies a task name (e.g. 'cancel oven reminder', 'cancel porridge reminder'), set reminder_id to that specific task keyword.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reminder_id": {
+                    "type": "string",
+                    "description": "Specific task keyword (e.g., 'oven', 'porridge', 'lights') or 'all' to cancel all active reminders."
+                }
+            }
+        }
+    },
+    {
+        "name": "search_past_conversations",
+        "description": "Search user's previous conversations and references stored cryptographically hashed for future recall.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search term, topic, or hash of previous conversation to recall."
+                }
+            },
+            "required": ["query"]
+        }
     }
 ]

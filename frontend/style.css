@@ -105,6 +105,18 @@ body.devices-page {
   gap: 8px;
 }
 
+.voice-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  padding: 5px 10px;
+  background: rgba(236, 72, 153, 0.1);
+  border: 1px solid rgba(236, 72, 153, 0.35);
+  border-radius: var(--radius-full);
+  color: #f472b6;
+}
+
 .stt-badge {
   display: flex;
   align-items: center;
@@ -1887,6 +1899,59 @@ body.devices-page {
   border-color: var(--accent-rose);
   box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6), 0 0 20px rgba(244, 63, 94, 0.2);
 }
+
+/* Reminder Banner & Hashed Conversation Tag Styles */
+.reminder-banner {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(217, 119, 6, 0.35) 100%);
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  border-radius: 12px;
+  padding: 12px 18px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 4px 20px rgba(245, 158, 11, 0.2);
+}
+
+.reminder-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fbbf24;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.reminder-banner-dismiss {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+}
+
+.reminder-banner-dismiss:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.hash-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.07);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: help;
+  margin-top: 6px;
+  display: inline-block;
+  user-select: all;
+}
+
 
 
 

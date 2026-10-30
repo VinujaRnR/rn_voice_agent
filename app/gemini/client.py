@@ -88,10 +88,29 @@ class GeminiClient:
                 except Exception:
                     pass
 
+            # Inject Past Conversation References (Hashed cross-session memory for future reference)
+            try:
+                from app.context.memory import conversation_memory
+                past_refs = conversation_memory.get_previous_conversations(limit=12, exclude_session_id=session_id)
+                if past_refs:
+                    ref_lines = []
+                    chron_refs = list(reversed(past_refs[:10]))
+                    for pr in chron_refs:
+                        r_role = "User" if pr.get("role") == "user" else "Sarah"
+                        h_short = (pr.get("content_hash") or "")[:8]
+                        ref_lines.append(f"- [{r_role} | SHA256:{h_short}]: {pr.get('content', '')}")
+                    full_prompt_lines.append(
+                        "\nStored Conversation References (Cryptographically Hashed for Future Reference):\n"
+                        + "\n".join(ref_lines)
+                        + "\nNote: If the user refers to past discussions, previous questions, or earlier context, use these references."
+                    )
+            except Exception:
+                pass
+
             if conversation_history:
-                full_prompt_lines.append("\nPrevious Conversation:")
-                for msg in conversation_history[-6:]:
-                    role = "User" if msg.get("role") == "user" else "Assistant"
+                full_prompt_lines.append("\nRecent Conversation History:")
+                for msg in conversation_history[-20:]:
+                    role = "User" if msg.get("role") == "user" else "Sarah"
                     full_prompt_lines.append(f"{role}: {msg.get('content', '')}")
                 full_prompt_lines.append("\nCurrent User Input:")
 

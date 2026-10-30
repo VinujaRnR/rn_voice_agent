@@ -120,8 +120,13 @@ document.addEventListener('DOMContentLoaded', () => {
         appendMessage('Sarah', 'Sarah is now in sleep mode. Greet me with "Sarah" to wake me up.');
       } else {
         wakeSarah();
-        appendMessage('Sarah', "Hello! I'm Sarah. I'm listening, what can I do for you?");
-        if (tts) tts.speak("Hello! I'm Sarah. I'm listening, what can I do for you?");
+        const greetingText = "Hello! I'm Sarah. I'm listening, what can I do for you?";
+        appendMessage('Sarah', greetingText);
+        if (typeof window.speak === 'function') {
+          window.speak(greetingText);
+        } else if (tts) {
+          tts.speak(greetingText);
+        }
       }
     });
   }
@@ -689,6 +694,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Handle Quick Chips click
   quickChips.forEach(chip => {
     chip.addEventListener('click', () => {
+      if (window.App && typeof window.App.handleUserInput === 'function') {
+        return;
+      }
       const cmd = chip.getAttribute('data-cmd');
       if (cmd) {
         if (!isSarahAwake) {
@@ -705,6 +713,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Handle Text Input Form
   chatForm.addEventListener('submit', (e) => {
+    if (window.App && typeof window.App.handleUserInput === 'function') {
+      return;
+    }
     e.preventDefault();
     const text = textInput.value.trim();
     if (!text) return;

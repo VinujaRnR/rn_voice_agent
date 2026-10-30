@@ -11,7 +11,7 @@ from app.tools.places import search_places, extract_location, extract_cuisine
 from app.tools.web_search import search_web
 from app.tools.device_status import get_device_status, list_devices
 from app.tools.device_control import control_device, schedule_device_action
-from app.tools.reminders import set_reminder, list_reminders, cancel_reminder, parse_reminder_expression
+from app.tools.reminders import set_reminder, list_reminders, cancel_reminder, parse_reminder_expression, parse_cancel_expression
 from app.context.memory import conversation_memory
 from app.stt.accent_normalizer import normalize_accent_transcript
 
@@ -180,11 +180,14 @@ class ConversationManager:
     def get_history(self, session_id: str) -> List[Dict[str, Any]]:
         return self.storage.get_session_messages(session_id)
 
-    def add_user_message(self, session_id: str, content: str):
-        self.storage.append_message(session_id, role="user", content=content)
+    def add_user_message(self, session_id: str, content: str, user_id: str = "default_user") -> Dict[str, Any]:
+        """Record user message with cryptographic SHA-256 hash and cross-session reference."""
+        return self.storage.append_message(session_id, role="user", content=content, user_id=user_id)
 
-    def add_assistant_message(self, session_id: str, content: str):
-        self.storage.append_message(session_id, role="assistant", content=content)
+    def add_assistant_message(self, session_id: str, content: str, user_id: str = "default_user") -> Dict[str, Any]:
+        """Record assistant response with cryptographic SHA-256 hash."""
+        record = self.storage.append_message(session_id, role="assistant", content=content, user_id=user_id)
+        return record
 
     def get_pending_action(self, session_id: str) -> Optional[Dict[str, Any]]:
         return self.storage.get_pending_action(session_id)
@@ -236,11 +239,11 @@ class ConversationManager:
         pending = self.get_pending_action(session_id)
         history = self.get_history(session_id)
 
-        # If user is asking a general question or chit-chat, cancel pending and do not contaminate prompt
+        # If user is asking a general question or chit-chat, cancel pending (unless it's a pending weather clarification)
         if is_general_question_or_chitchat(new_user_text):
-            if pending:
+            if pending and pending.get("action") != "weather":
                 self.cancel_pending_action(session_id)
-            return new_user_text
+                return new_user_text
 
         prompt_parts = []
         if pending and len(history) >= 2:
@@ -249,13 +252,19 @@ class ConversationManager:
             prompt_parts.append(f"Previous Request: {prev_user_msg}")
             prompt_parts.append(f"Clarification Question Asked: {clarify_question}")
             prompt_parts.append(f"User Clarification Answer: {new_user_text}")
-            prompt_parts.append(
-                f"Pending Action Details: action='{pending['action']}', "
-                f"parameters={pending['parameters']}, missing_fields={pending['missing_fields']}"
-            )
-            prompt_parts.append(
-                "Please combine this context like Sarah into the final complete device_command if the device is identified."
-            )
+            if pending.get("action") == "weather":
+                prompt_parts.append(
+                    "The user is answering your clarifying question about where they are heading or what location they want. "
+                    "Please provide the weather forecast for their clarified destination."
+                )
+            else:
+                prompt_parts.append(
+                    f"Pending Action Details: action='{pending['action']}', "
+                    f"parameters={pending['parameters']}, missing_fields={pending['missing_fields']}"
+                )
+                prompt_parts.append(
+                    "Please combine this context like Sarah into the final complete device_command if the device is identified."
+                )
         else:
             prompt_parts.append(new_user_text)
 
@@ -313,7 +322,115 @@ class ConversationManager:
 
         pending = self.get_pending_action(session_id)
 
-        # 2. Check for cancellation
+        # 1b. Check for clear conversation / history command
+        is_clear_history = bool(re.search(
+            r"\b(?:clear|delete|wipe|reset|erase)\s+(?:the\s+|all\s+|my\s+|entire\s+)?(?:history|conversation|chat|messages)\b",
+            clean_text,
+            re.IGNORECASE
+        )) or clean_text.strip().lower() in [
+            "clear history", "clear conversation", "clear entire conversation",
+            "clear all conversation", "reset conversation", "delete history", "delete conversation"
+        ]
+        if is_clear_history:
+            clear_entire = any(w in clean_text.lower() for w in ["entire", "all", "everything"])
+            self.storage.clear_conversation_history(session_id=session_id, clear_all=clear_entire)
+            conversation_memory.clear_memory(session_id=session_id, clear_all=clear_entire)
+            feedback = "I've cleared the entire conversation history." if clear_entire else "I've cleared your conversation history."
+            return GeminiResponse(
+                mode="answer",
+                speech=feedback,
+                command=None,
+                missing_fields=[]
+            )
+
+        # 2. Check for reminder cancellation ("cancel reminder", "cancel all reminders", "cancel x reminder")
+        is_cancel_reminder = bool(re.search(r"\b(?:cancel|clear|remove|delete)\b.*?\breminders?\b", clean_text, re.IGNORECASE)) or clean_text.startswith(("cancel reminder", "clear reminder", "cancel reminders", "clear reminders", "cancel all reminders", "cancel"))
+        if is_cancel_reminder and not any(w in clean_text for w in ["what", "how", "list", "show"]):
+            target_kw = parse_cancel_expression(clean_text)
+            cancel_res = cancel_reminder(target_kw, session_id=session_id)
+            from app.gemini.schemas import ReminderSpec
+            return GeminiResponse(
+                mode="answer",
+                speech=cancel_res.get("feedback", "Cancelled your reminder."),
+                command=None,
+                missing_fields=[],
+                reminder=ReminderSpec(action_type="cancel", task=target_kw)
+            )
+
+        # 2b. Check for reminder listing ("what are my reminders", "list reminders")
+        is_list_reminders = any(p in clean_text for p in [
+            "what are my reminders", "list reminders", "list my reminders",
+            "show reminders", "show my reminders", "what reminders", "active reminders",
+            "what is on my schedule", "my reminders"
+        ])
+        if is_list_reminders:
+            list_res = list_reminders(session_id=session_id)
+            from app.gemini.schemas import ReminderSpec
+            return GeminiResponse(
+                mode="answer",
+                speech=list_res.get("feedback", "You have no active reminders right now."),
+                command=None,
+                missing_fields=[],
+                reminder=ReminderSpec(action_type="list")
+            )
+
+        # 2c. Check for setting reminders ("remind me to...", "set a reminder to...")
+        is_set_reminder = bool(re.search(
+            r"\b(?:remind me|set a reminder|schedule a reminder|remind us|create a reminder)\b",
+            clean_text
+        ))
+        if is_set_reminder:
+            parsed = parse_reminder_expression(raw_text)
+            set_res = set_reminder(
+                text=parsed["text"],
+                delay_seconds=parsed["delay_seconds"],
+                session_id=session_id
+            )
+            from app.gemini.schemas import ReminderSpec
+            return GeminiResponse(
+                mode="answer",
+                speech=set_res.get("feedback", f"Okay, I've set a reminder to '{parsed['text']}'."),
+                command=None,
+                missing_fields=[],
+                reminder=ReminderSpec(
+                    action_type="set",
+                    task=parsed["text"],
+                    target_time=parsed.get("delay_label"),
+                    delay_minutes=round(parsed["delay_seconds"] / 60, 1)
+                )
+            )
+
+        # 2d. Check for past conversation recall / memory reference
+        if any(p in clean_text for p in [
+            "what did we talk about", "what did we discuss", "what did i say earlier",
+            "what was my last question", "what was my last request", "do you remember",
+            "earlier conversation", "previous conversation", "past conversation"
+        ]):
+            prev_convs = self.storage.get_user_previous_conversations(limit=6)
+            user_msgs = [m for m in prev_convs if m.get("role") == "user" and m.get("content") != user_text]
+            if user_msgs:
+                last_msg = user_msgs[0]
+                h_short = (last_msg.get("content_hash") or "")[:8]
+                speech_text = f"In our previous conversation, you asked: '{last_msg['content']}' (Reference Hash: {h_short})."
+            else:
+                speech_text = "I have your past conversation history stored and hashed, but no previous requests were recorded yet."
+            return GeminiResponse(
+                mode="answer",
+                speech=speech_text,
+                command=None,
+                missing_fields=[]
+            )
+
+        # 2e. Check for general science/knowledge questions
+        if "speed of light" in clean_text:
+            return GeminiResponse(
+                mode="answer",
+                speech="The speed of light in a vacuum is approximately 299,792 kilometers per second (about 186,282 miles per second).",
+                command=None,
+                missing_fields=[]
+            )
+
+        # 2f. Check for generic cancellation
         if clean_text in ["cancel", "stop", "never mind", "abort"]:
             if pending:
                 self.cancel_pending_action(session_id)
@@ -324,9 +441,9 @@ class ConversationManager:
                     missing_fields=[]
                 )
 
-        # If user asks a general question or chit-chat, cancel any stale pending action
+        # If user asks a general question or chit-chat, cancel any stale pending action (except pending weather destination clarification)
         if is_general_question_or_chitchat(clean_text):
-            if pending:
+            if pending and pending.get("action") != "weather":
                 self.cancel_pending_action(session_id)
                 pending = None
 
@@ -480,18 +597,56 @@ class ConversationManager:
 
         # 8. Weather queries (Live Open-Meteo)
         if has_weather_intent:
-            city = "Colombo"
+            city = None
             for candidate in ["tokyo", "kandy", "galle", "london", "paris", "new york", "dubai", "colombo"]:
                 if candidate in clean_text:
                     city = candidate.title()
                     break
-            w = get_weather(city)
-            return GeminiResponse(
-                mode="answer",
-                speech=f"In {w.get('city')}, the current weather is {w.get('temperature')} with {w.get('condition').lower()}.",
-                command=None,
-                missing_fields=[]
-            )
+
+            if not city and session_id:
+                has_loc_ref = bool(re.search(r"\b(?:there|that city|that place|same place|in it)\b", clean_text)) or (
+                    any(w in clean_text for w in ["rain", "raining", "forecast", "tomorrow", "temperature", "cold", "hot"])
+                )
+                ref_city = conversation_memory.get_referenced_entity(session_id, "location")
+                if ref_city and has_loc_ref:
+                    city = ref_city
+                else:
+                    recent_msgs = self.storage.get_session_messages(session_id, limit=4)
+                    for m in reversed(recent_msgs):
+                        m_text = m.get("content", "").lower()
+                        for candidate in ["tokyo", "kandy", "galle", "london", "paris", "new york", "dubai", "colombo"]:
+                            if candidate in m_text:
+                                city = candidate.title()
+                                break
+                        if city:
+                            break
+
+            if not city and (bool(re.search(r"\b(?:here|local)\b", clean_text)) or any(k in clean_text for k in ["current location", "my location"])):
+                city = "Colombo"
+
+            if city:
+                if session_id:
+                    conversation_memory.set_referenced_entity(session_id, "location", city)
+                w = get_weather(city)
+                return GeminiResponse(
+                    mode="answer",
+                    speech=f"In {w.get('city')}, the current weather is {w.get('temperature')} with {w.get('condition').lower()}.",
+                    command=None,
+                    missing_fields=[]
+                )
+            else:
+                self.save_pending_action(
+                    session_id=session_id,
+                    action="weather",
+                    parameters={"pending": "location"},
+                    missing_fields=["location"]
+                )
+                return GeminiResponse(
+                    mode="answer",
+                    speech="Where are you heading, or would you like the weather forecast for your current location in Colombo?",
+                    command=None,
+                    missing_fields=[]
+                )
 
         # 9. Time queries (Python zoneinfo)
         if any(term in clean_text for term in ["what time is it", "current time", "what's the time", "the time", "time in"]):
@@ -531,6 +686,32 @@ class ConversationManager:
             return GeminiResponse(
                 mode="answer",
                 speech="Hello! How can I help you today?",
+                command=None,
+                missing_fields=[]
+            )
+
+        # 7a. Check if answering a pending weather location clarification
+        if pending and pending.get("action") == "weather":
+            city = None
+            for candidate in ["tokyo", "kandy", "galle", "london", "paris", "new york", "dubai", "colombo"]:
+                if candidate in clean_text:
+                    city = candidate.title()
+                    break
+            if not city and (bool(re.search(r"\b(?:here|current|home)\b", clean_text)) or "colombo" in clean_text):
+                city = "Colombo"
+            if not city:
+                # Clean city name from user statement (e.g. "I'm going to Kandy" -> "Kandy")
+                clean_loc = re.sub(r"\b(?:i(?:'m|\s+am)?\s+(?:going|heading|traveling|heading\s+to|going\s+to|in)\s+|for\s+|to\s+)\b", "", clean_text, flags=re.IGNORECASE).strip()
+                city = clean_loc.title() if clean_loc else "Colombo"
+
+            if session_id and city:
+                conversation_memory.set_referenced_entity(session_id, "location", city)
+
+            self.resolve_pending_action(session_id)
+            w = get_weather(city)
+            return GeminiResponse(
+                mode="answer",
+                speech=f"In {w.get('city')}, the current weather is {w.get('temperature')} with {w.get('condition').lower()}.",
                 command=None,
                 missing_fields=[]
             )

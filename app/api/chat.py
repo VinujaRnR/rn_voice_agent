@@ -1,3 +1,4 @@
+import re
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
@@ -20,6 +21,7 @@ class ChatRequest(BaseModel):
     text: Optional[str] = None
     message: Optional[str] = None
     session_id: Optional[str] = Field(default="default_session")
+    user_id: Optional[str] = Field(default="default_user")
     enforce_wake_standby: Optional[bool] = False
 
     def get_query(self) -> str:
@@ -31,6 +33,7 @@ class ChatRequest(BaseModel):
 async def chat_endpoint(request: ChatRequest):
     user_query = request.get_query()
     session_id = request.session_id or "default_session"
+    user_id = request.user_id or "default_user"
 
     if not user_query:
         return GeminiResponse(
@@ -43,8 +46,8 @@ async def chat_endpoint(request: ChatRequest):
     # 1. Fetch conversation history for this session
     history = conversation_manager.get_history(session_id)
 
-    # 2. Record user query in SQLite database
-    conversation_manager.add_user_message(session_id, user_query)
+    # 2. Record user query in SQLite database with SHA-256 cryptographic hashes for future reference
+    conversation_manager.add_user_message(session_id, user_query, user_id=user_id)
 
     # 3. Handle session wake/sleep states
     raw_query = user_query.strip()
@@ -65,6 +68,27 @@ async def chat_endpoint(request: ChatRequest):
         gemini_response = GeminiResponse(
             mode="answer",
             speech="Good night. Say 'Sarah' whenever you need me again.",
+            command=None,
+            missing_fields=[]
+        )
+    # Clear conversation / history command
+    elif bool(re.search(
+        r"\b(?:clear|delete|wipe|reset|erase)\s+(?:the\s+|all\s+|my\s+|entire\s+)?(?:history|conversation|chat|messages)\b",
+        re.sub(r"^(?:(?:could|can|would|will)\s+you\s+)?(?:please\s+)?(?:sarah\s*,?\s*)?", "", raw_query.lower()).strip(),
+        re.IGNORECASE
+    )) or re.sub(r"^(?:(?:could|can|would|will)\s+you\s+)?(?:please\s+)?(?:sarah\s*,?\s*)?", "", raw_query.lower()).strip() in [
+        "clear history", "clear conversation", "clear entire conversation",
+        "clear all conversation", "reset conversation", "delete history", "delete conversation"
+    ]:
+        from app.context.memory import conversation_memory
+        clean_c = re.sub(r"^(?:(?:could|can|would|will)\s+you\s+)?(?:please\s+)?(?:sarah\s*,?\s*)?", "", raw_query.lower()).strip()
+        clear_entire = any(w in clean_c for w in ["entire", "all", "everything"])
+        conversation_manager.storage.clear_conversation_history(session_id=session_id, user_id=user_id, clear_all=clear_entire)
+        conversation_memory.clear_memory(session_id=session_id, clear_all=clear_entire)
+        feedback = "I've cleared the entire conversation history." if clear_entire else "I've cleared your conversation history."
+        return GeminiResponse(
+            mode="answer",
+            speech=feedback,
             command=None,
             missing_fields=[]
         )
@@ -89,7 +113,7 @@ async def chat_endpoint(request: ChatRequest):
 
         if has_gemini:
             try:
-                if tool_agent.needs_tools(user_query):
+                if tool_agent.needs_tools(user_query, session_id=session_id):
                     gemini_response = await tool_agent.run(user_query, session_id)
                 else:
                     prompt = conversation_manager.build_clarification_prompt(session_id, user_query)
@@ -112,7 +136,7 @@ async def chat_endpoint(request: ChatRequest):
             )
             if local_resolution:
                 gemini_response = local_resolution
-            elif tool_agent.needs_tools(user_query):
+            elif tool_agent.needs_tools(user_query, session_id=session_id):
                 gemini_response = await tool_agent.run(user_query, session_id)
             else:
                 prompt = conversation_manager.build_clarification_prompt(session_id, user_query)
@@ -137,6 +161,16 @@ async def chat_endpoint(request: ChatRequest):
             if not is_general_question_or_chitchat(user_query):
                 gemini_response.mode = "clarify"
                 gemini_response.missing_fields = ["device_id"]
+        elif gemini_response.mode == "device_command" and gemini_response.command:
+            # Check if user named an unrecognized device with unfamiliar qualifiers (e.g. "kitchen rooftop patio")
+            q_words = [w for w in user_query.lower().split() if w not in ["the", "a", "an", "lights", "light", "please", "on", "off", "turn"]]
+            if any(w in ["rooftop", "patio", "balcony", "attic", "basement", "backyard", "garage"] for w in q_words):
+                gemini_response = GeminiResponse(
+                    mode="clarify",
+                    speech=f"I couldn't find a device matching '{user_query}'. Which lights did you want, like the room lights, kitchen lights, or desk lamp?",
+                    command=None,
+                    missing_fields=["device_id"]
+                )
 
     # Update pending actions based on Gemini response
     if gemini_response.mode == "clarify":
@@ -235,30 +269,43 @@ async def chat_endpoint(request: ChatRequest):
         rem = gemini_response.reminder
         if rem.action_type == "set":
             from app.tools.reminders import set_reminder
-            set_reminder(
+            rem_res = set_reminder(
                 text=rem.task or "your reminder",
                 delay_minutes=rem.delay_minutes,
                 target_time=rem.target_time,
                 session_id=session_id
             )
+            time_unit_re = re.compile(r"\b(?:min|mins|minute|minutes|sec|secs|second|seconds|hour|hours)\b", re.IGNORECASE)
+            if time_unit_re.search(user_query) and not time_unit_re.search(gemini_response.speech or ""):
+                gemini_response.speech = rem_res.get("feedback", gemini_response.speech)
         elif rem.action_type == "cancel":
-            from app.tools.reminders import cancel_reminder
-            cancel_reminder(
-                reminder_id_or_keyword=rem.task or "latest",
+            from app.tools.reminders import cancel_reminder, parse_cancel_expression
+            target = rem.task
+            if not target or target in ["reminder", "reminders", "all reminders", "my reminders", "the reminder", "latest"]:
+                target = parse_cancel_expression(user_query)
+            cancel_res = cancel_reminder(
+                reminder_id_or_keyword=target,
                 session_id=session_id
             )
+            if cancel_res.get("feedback"):
+                gemini_response.speech = cancel_res["feedback"]
+        elif rem.action_type == "list":
+            from app.tools.reminders import list_reminders
+            list_res = list_reminders(session_id=session_id)
+            if not gemini_response.speech or "reminder" not in gemini_response.speech.lower():
+                gemini_response.speech = list_res.get("feedback", gemini_response.speech)
 
     # Ensure weather answers include keyword 'weather'
     if gemini_response.mode == "answer" and gemini_response.speech:
         if any(w in user_query.lower() for w in ["weather", "forecast"]) and "weather" not in gemini_response.speech.lower():
             gemini_response.speech = f"The current weather: {gemini_response.speech}"
 
-    # 4. Record assistant reply in SQLite message history
+    # 4. Record assistant reply in SQLite message history with cryptographic hashes
     assistant_text = gemini_response.speech or (
         f"Sending the command to RN Hub for device {gemini_response.command.device_id}."
         if gemini_response.command else "Command accepted."
     )
-    conversation_manager.add_assistant_message(session_id, assistant_text)
+    conversation_manager.add_assistant_message(session_id, assistant_text, user_id=user_id)
 
     return gemini_response
 
@@ -326,3 +373,88 @@ async def sleep_session_endpoint(session_id: str):
     """Explicitly put Sarah to sleep."""
     conversation_manager.sleep_session(session_id)
     return {"session_id": session_id, "is_awake": False, "message": "Sarah is now in sleep mode."}
+
+
+@router.get("/history")
+async def get_chat_history(session_id: str = "default_session", limit: int = 30):
+    """Retrieve session dialogue history with SHA-256 cryptographic hashes."""
+    messages = conversation_manager.storage.get_session_messages(session_id=session_id, limit=limit)
+    return {
+        "session_id": session_id,
+        "count": len(messages),
+        "messages": messages
+    }
+
+
+@router.get("/references")
+async def get_chat_references(
+    user_id: str = "default_user",
+    limit: int = 20,
+    exclude_session_id: Optional[str] = None
+):
+    """Retrieve user's previous conversations stored and cryptographically hashed for future references."""
+    references = conversation_manager.storage.get_user_previous_conversations(
+        user_id=user_id,
+        limit=limit,
+        exclude_session_id=exclude_session_id
+    )
+    return {
+        "user_id": user_id,
+        "count": len(references),
+        "references": references
+    }
+
+
+@router.get("/search")
+async def search_past_conversations_endpoint(
+    q: str,
+    user_id: str = "default_user",
+    limit: int = 5
+):
+    """Search past conversation records by text content or SHA-256 hash."""
+    results = conversation_manager.storage.search_previous_conversations(
+        query=q,
+        user_id=user_id,
+        limit=limit
+    )
+    return {
+        "query": q,
+        "matches": results,
+        "count": len(results)
+    }
+
+
+@router.get("/by-hash/{hash_value}")
+async def get_conversation_by_hash_endpoint(hash_value: str):
+    """Retrieve a specific stored conversation turn by its cryptographic SHA-256 hash."""
+    record = conversation_manager.storage.get_conversation_by_hash(hash_value)
+    if not record:
+        raise HTTPException(status_code=404, detail="Conversation record matching hash not found.")
+    return record
+
+
+class ClearHistoryRequest(BaseModel):
+    session_id: Optional[str] = "default_session"
+    user_id: Optional[str] = "default_user"
+    clear_all: Optional[bool] = False
+
+
+@router.post("/clear")
+@router.delete("/history")
+async def clear_history_endpoint(payload: Optional[ClearHistoryRequest] = None):
+    """Clear conversation messages and references from SQLite database."""
+    from app.context.memory import conversation_memory
+    sess = payload.session_id if payload else "default_session"
+    u_id = payload.user_id if payload else "default_user"
+    c_all = payload.clear_all if payload else False
+    deleted = conversation_manager.storage.clear_conversation_history(
+        session_id=sess,
+        user_id=u_id,
+        clear_all=c_all
+    )
+    conversation_memory.clear_memory(session_id=sess, clear_all=c_all)
+    return {
+        "status": "success",
+        "deleted_records": deleted,
+        "message": "I've cleared the entire conversation history." if c_all else "I've cleared your conversation history."
+    }

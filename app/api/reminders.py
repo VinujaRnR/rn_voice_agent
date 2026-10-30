@@ -47,13 +47,29 @@ async def list_reminders_endpoint(session_id: Optional[str] = None):
     return list_reminders(session_id=session_id)
 
 
+class AckReminderRequest(BaseModel):
+    reminder_id: Optional[str] = None
+    reminder_ids: Optional[List[str]] = None
+
+
+@router.post("/ack")
+async def acknowledge_reminder_endpoint(payload: AckReminderRequest):
+    """Mark reminder(s) as delivered and acknowledged by the client UI."""
+    from app.tools.reminders import acknowledge_reminder
+    ids = payload.reminder_ids or ([payload.reminder_id] if payload.reminder_id else [])
+    for rid in ids:
+        acknowledge_reminder(rid)
+    return {"status": "success", "acknowledged": ids}
+
+
 @router.get("/due")
-async def check_due_endpoint():
-    """Poll for reminders that have reached their trigger time."""
-    due = check_due_reminders()
+async def check_due_endpoint(since_seconds: int = 120):
+    """Poll for reminders that have reached their trigger time or were recently triggered."""
+    due = check_due_reminders(window_seconds=float(since_seconds))
+    all_triggered = [item for item in due if not item.get("acknowledged")]
     return {
-        "due_count": len(due),
-        "triggered": due,
+        "due_count": len(all_triggered),
+        "triggered": all_triggered,
         "recent_history": fired_reminders_log[-20:]
     }
 

@@ -21,6 +21,10 @@
         </div>
       </div>
       <div class="header-badges">
+        <div class="voice-badge" id="voice-badge" title="Assistant Voice: Sarah (Exclusively Female)">
+          <span>👩</span>
+          <span>Voice: <strong>Female</strong></span>
+        </div>
         <div class="stt-badge" id="stt-badge" title="High-accuracy Gemini Multimodal Audio speech recognition">
           <span class="stt-icon">🎙️</span>
           <span>STT: <strong id="stt-engine-name">Gemini Audio</strong></span>
@@ -100,13 +104,26 @@
         <p class="transcript-text" id="transcript">Listening for "Sarah" or click the microphone...</p>
       </div>
 
+      <!-- Reminder Notification Banner -->
+      <div id="reminder-alert-banner" class="reminder-banner" style="display: none;">
+        <div class="reminder-banner-content">
+          <span style="font-size: 1.2rem;">🔔</span>
+          <span id="reminder-banner-text">Reminder alert active</span>
+        </div>
+        <button type="button" id="reminder-banner-close" class="reminder-banner-dismiss">Dismiss</button>
+      </div>
+
       <!-- Quick Action Chips -->
       <div class="quick-chips">
         <button type="button" class="chip" data-cmd="Sarah, what is the weather?">🌦️ Weather</button>
         <button type="button" class="chip" data-cmd="Sarah, what time is it?">⏰ Time</button>
+        <button type="button" class="chip" data-cmd="Sarah, remind me to check the oven in 5 minutes">⏰ Remind me in 5m</button>
+        <button type="button" class="chip" data-cmd="Sarah, what are my reminders?">📋 My Reminders</button>
+        <button type="button" class="chip" data-cmd="Sarah, what was my previous request?">🧠 Memory Recall</button>
         <button type="button" class="chip" data-cmd="Sarah, turn on the lights">💡 Turn on lights</button>
         <button type="button" class="chip" data-cmd="Sarah, turn on room lights">🛋️ Room lights</button>
         <button type="button" class="chip" data-cmd="Sarah, turn on kitchen lights">🍳 Kitchen lights</button>
+        <button type="button" class="chip" data-cmd="Sarah, clear entire conversation">🗑️ Clear Conversation</button>
       </div>
 
       <!-- Text Input Fallback / Testing -->
@@ -141,8 +158,8 @@
     </section>
   </div>
 
-  <script src="tts.js"></script>
-  <script src="speech.js"></script>
-  <script src="app.js"></script>
+  <script src="tts.js?v=20261030_07"></script>
+  <script src="speech.js?v=20261030_07"></script>
+  <script src="app.js?v=20261030_08"></script>
 </body>
 </html>

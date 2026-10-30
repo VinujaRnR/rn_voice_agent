@@ -30,12 +30,21 @@ class ContextBuilder:
         # Pending action if any
         pending_action = self.storage.get_pending_action(session_id)
 
-        # Recent conversation messages
+        # Recent conversation messages (current session)
         recent = conversation_memory.get_recent_messages(session_id, limit=8)
         formatted_messages = [
-            {"role": msg["role"], "content": msg["content"], "timestamp": msg.get("timestamp")}
+            {
+                "role": msg["role"],
+                "content": msg["content"],
+                "content_hash": msg.get("content_hash"),
+                "turn_hash": msg.get("turn_hash"),
+                "timestamp": msg.get("timestamp")
+            }
             for msg in recent
         ]
+
+        # Previous conversation references (cross-session hashed memory for future reference)
+        past_refs = conversation_memory.get_references_summary(session_id=session_id, user_id=user_id, limit=6)
 
         # Available registered devices
         all_devices = device_registry.list_devices()
@@ -70,7 +79,8 @@ class ContextBuilder:
             "conversation": {
                 "session_id": session_id,
                 "pending_intent": pending_action,
-                "recent_messages": formatted_messages
+                "recent_messages": formatted_messages,
+                "past_references": past_refs
             },
             "devices": {
                 "registry_source": "rn_hub",

@@ -6,6 +6,7 @@ from app.api.stt import router as stt_router
 from app.api.commands import router as commands_router
 from app.api.devices import router as devices_router
 from app.api.reminders import router as reminders_router
+from app.api.tts import router as tts_router
 from app.rabbitmq.connection import rabbitmq_connection
 from app.rabbitmq.consumer import result_consumer
 from app.tools.reminders import start_reminder_worker, stop_reminder_worker
@@ -36,6 +37,7 @@ app.include_router(stt_router)
 app.include_router(commands_router)
 app.include_router(devices_router)
 app.include_router(reminders_router)
+app.include_router(tts_router)
 
 
 @app.get("/health")
