@@ -174,9 +174,12 @@ class ToolAgent:
                     city = candidate.title()
                     break
 
+            if not city and any(k in q for k in ["here", "current location", "my location", "local"]):
+                city = "Colombo"
+
             # Resolve references to previous location ("there", "that place", or follow-up question)
             if not city and session_id:
-                has_loc_ref = bool(re.search(r"\b(?:there|that city|that place|same place|in it)\b", q)) or (
+                has_loc_ref = any(ref in q for ref in ["there", "that city", "that place", "same place", "in it"]) or (
                     any(w in q for w in ["rain", "raining", "forecast", "tomorrow", "temperature", "cold", "hot"])
                 )
                 ref_city = conversation_memory.get_referenced_entity(session_id, "location")
@@ -192,9 +195,6 @@ class ToolAgent:
                                 break
                         if city:
                             break
-
-            if not city and (bool(re.search(r"\b(?:here|local)\b", q)) or any(k in q for k in ["current location", "my location"])):
-                city = "Colombo"
 
             if city:
                 if session_id:
@@ -216,7 +216,7 @@ class ToolAgent:
                     if candidate in q:
                         found_city = candidate.title()
                         break
-                if not found_city and (bool(re.search(r"\b(?:here|current)\b", q)) or "colombo" in q):
+                if not found_city and any(k in q for k in ["here", "colombo", "current"]):
                     found_city = "Colombo"
                 if found_city:
                     conversation_memory.set_referenced_entity(session_id, "location", found_city)
