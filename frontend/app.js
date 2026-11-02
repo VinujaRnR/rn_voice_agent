@@ -282,6 +282,31 @@ class AssistantApp {
   }
 
   /**
+   * Normalize reminder task text: convert first-person to second-person ("take my pills" -> "take your pills")
+   */
+  formatReminderTask(text) {
+    if (!text) return '';
+    let clean = text.trim();
+    if (clean.toLowerCase().startsWith('to ')) {
+      clean = clean.slice(3).trim();
+    }
+    return clean
+      .replace(/\bmyself\b/gi, 'yourself')
+      .replace(/\bourselves\b/gi, 'yourselves')
+      .replace(/\bmine\b/gi, 'yours')
+      .replace(/\bours\b/gi, 'yours')
+      .replace(/\bmy\b/gi, 'your')
+      .replace(/\bour\b/gi, 'your')
+      .replace(/\bi'm\b/gi, "you're")
+      .replace(/\bi am\b/gi, 'you are')
+      .replace(/\bi've\b/gi, "you've")
+      .replace(/\bi'll\b/gi, "you'll")
+      .replace(/\bi'd\b/gi, "you'd")
+      .replace(/\bi\b/gi, 'you')
+      .replace(/\bme\b/gi, 'you');
+  }
+
+  /**
    * Proactive Voice Assistant Reminder Poller:
    * Polls backend every 2 seconds for scheduled reminders that have reached their due time.
    * Proactively announces through TTS and displays a prominent visual banner.
@@ -291,7 +316,8 @@ class AssistantApp {
 
     this._reminderInterval = setInterval(async () => {
       try {
-        const res = await fetch('/api/reminders/due');
+        const queryParam = this.sessionId ? `?session_id=${encodeURIComponent(this.sessionId)}` : '';
+        const res = await fetch(`/api/reminders/due${queryParam}`);
         if (!res.ok) return;
         const data = await res.json();
 
@@ -310,8 +336,8 @@ class AssistantApp {
           // 1. Skip if already alerted by this client session
           if (this.processedReminderIds.has(rem.id)) return false;
 
-          // 2. Skip if acknowledged on backend
-          if (rem.status === 'acknowledged' || rem.acknowledged) return false;
+          // 2. Skip if acknowledged, completed, or cancelled on backend
+          if (rem.status === 'acknowledged' || rem.status === 'completed' || rem.status === 'cancelled' || rem.acknowledged) return false;
 
           // 3. Freshness check: only alert if due/triggered within the last 120 seconds
           // Prevents replaying old reminders on page refresh
@@ -347,11 +373,12 @@ class AssistantApp {
             this.processedReminderIds.add(rem.id);
             newlyDeliveredIds.push(rem.id);
 
-            const alertText = `Reminder alert: It's time to ${rem.text}.`;
+            const cleanTask = this.formatReminderTask(rem.text);
+            const alertText = rem.speech || `Reminder alert: It's time to ${cleanTask}.`;
 
             // 1. Display notification banner
             if (this.reminderBanner && this.reminderBannerText) {
-              this.reminderBannerText.textContent = `It's time to ${rem.text} (scheduled for ${rem.due_at})`;
+              this.reminderBannerText.textContent = `It's time to ${cleanTask} (scheduled for ${rem.due_at})`;
               this.reminderBanner.style.display = 'flex';
             }
 

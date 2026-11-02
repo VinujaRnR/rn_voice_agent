@@ -66,10 +66,21 @@ class GeminiClient:
                 from app.tools.reminders import list_reminders
                 active_rem_data = list_reminders(session_id=session_id)
                 if active_rem_data.get("reminders"):
-                    rem_descs = [f"- '{r['text']}' at {r['due_at']} (id: {r['id']})" for r in active_rem_data["reminders"]]
+                    rem_descs = [f"- '{r['text']}' at {r['due_at']} (id: {r['id']}, recurrence: {r.get('recurrence', 'once')})" for r in active_rem_data["reminders"]]
                     full_prompt_lines.append("Active Reminders in Schedule for this session:\n" + "\n".join(rem_descs))
                 else:
-                    full_prompt_lines.append("Active Reminders in Schedule for this session: None")
+                    full_prompt_lines.append("Active Reminders in Schedule for this session: None (No active reminders are currently scheduled)")
+
+                if active_rem_data.get("recent_completed"):
+                    comp_descs = [f"- '{r['text']}' originally scheduled for {r['scheduled_time']} (status: {r['status']}, recurrence: {r['recurrence']})" for r in active_rem_data["recent_completed"]]
+                    full_prompt_lines.append("Recently Completed / Past Reminders for this session:\n" + "\n".join(comp_descs))
+
+                full_prompt_lines.append(
+                    "CRITICAL GROUND TRUTH FOR REMINDERS: 'Active Reminders in Schedule' is the AUTHORITATIVE LIVE ground truth. "
+                    "If Active Reminders is None or empty, the user has NO active reminders. Do not assume reminders from earlier in the chat history are still active. "
+                    "If a reminder was for 'only that day' / 'once' and its scheduled time has passed, or it is listed in Recently Completed, it is OVER and completed. "
+                    "If the user asks 'how many reminders', 'at what time', 'what's on my schedule', or references past reminders, accurately explain that no active reminders remain or that the earlier reminder has completed."
+                )
             except Exception:
                 pass
 

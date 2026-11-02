@@ -57,6 +57,10 @@ def normalize_spoken_numbers(text: str) -> str:
         r"\bninth\b": "9",
         r"\bten\b": "10",
         r"\btenth\b": "10",
+        r"\beleven\b": "11",
+        r"\beleventh\b": "11",
+        r"\btwelve\b": "12",
+        r"\btwelfth\b": "12",
     }
     res = text
     for pattern, num in word_to_num.items():

@@ -179,12 +179,19 @@ class ConversationStorage:
                     status TEXT NOT NULL DEFAULT 'pending',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     reminded_at TIMESTAMP,
+                    recurrence TEXT DEFAULT 'once',
                     FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
                 );
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_session ON reminders(session_id);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_status ON reminders(status);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(due_at_timestamp);")
+
+            # Column migration check for reminders
+            cursor = conn.execute("PRAGMA table_info(reminders);")
+            rem_cols = {row[1] for row in cursor.fetchall()}
+            if "recurrence" not in rem_cols:
+                conn.execute("ALTER TABLE reminders ADD COLUMN recurrence TEXT DEFAULT 'once';")
 
     # Session Management
     def ensure_session(self, session_id: str, user_id: str = "default_user"):
@@ -587,21 +594,23 @@ class ConversationStorage:
         text: str,
         due_at_timestamp: float,
         due_at_iso: str,
-        delay_seconds: int = 0
+        delay_seconds: int = 0,
+        recurrence: str = "once"
     ) -> Dict[str, Any]:
         self.ensure_session(session_id)
         with self._get_connection() as conn:
             conn.execute("""
-                INSERT INTO reminders (id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                INSERT INTO reminders (id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, recurrence)
+                VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
                 ON CONFLICT(id) DO UPDATE SET
                     session_id=excluded.session_id,
                     text=excluded.text,
                     due_at_timestamp=excluded.due_at_timestamp,
                     due_at_iso=excluded.due_at_iso,
                     delay_seconds=excluded.delay_seconds,
-                    status=excluded.status;
-            """, (reminder_id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds))
+                    status=excluded.status,
+                    recurrence=excluded.recurrence;
+            """, (reminder_id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, recurrence))
         return {
             "id": reminder_id,
             "session_id": session_id,
@@ -609,49 +618,139 @@ class ConversationStorage:
             "due_at_timestamp": due_at_timestamp,
             "due_at_iso": due_at_iso,
             "delay_seconds": delay_seconds,
-            "status": "pending"
+            "status": "pending",
+            "recurrence": recurrence
         }
 
+    def update_reminder_recurrence(self, reminder_id: Optional[str], recurrence: str, session_id: Optional[str] = None) -> bool:
+        with self._get_connection() as conn:
+            if reminder_id:
+                cursor = conn.execute("""
+                    UPDATE reminders
+                    SET recurrence = ?
+                    WHERE id = ?;
+                """, (recurrence, reminder_id))
+                if cursor.rowcount > 0:
+                    return True
+            if session_id:
+                cursor = conn.execute("""
+                    UPDATE reminders
+                    SET recurrence = ?
+                    WHERE id = (
+                        SELECT id FROM reminders
+                        WHERE session_id = ? AND status = 'pending'
+                        ORDER BY rowid DESC LIMIT 1
+                    );
+                """, (recurrence, session_id))
+                return cursor.rowcount > 0
+            return False
+
     def get_active_reminders(self, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        now_ts = time.time()
+        with self._get_connection() as conn:
+            # Auto-handle expired or past due reminders:
+            # - If once or only for that day: mark as 'completed' so it clears from active schedule
+            # - If recurring (daily/weekly/monthly): advance due_at_timestamp to future
+            past_rows = conn.execute("""
+                SELECT id, due_at_timestamp, recurrence
+                FROM reminders
+                WHERE status = 'pending' AND due_at_timestamp < ?;
+            """, (now_ts,)).fetchall()
+
+            for r in past_rows:
+                rid = r["id"]
+                rec = (r["recurrence"] or "once").lower()
+                due_ts = r["due_at_timestamp"]
+                if rec == "daily":
+                    while due_ts < now_ts:
+                        due_ts += 86400
+                    due_iso = datetime.fromtimestamp(due_ts).isoformat()
+                    conn.execute("UPDATE reminders SET due_at_timestamp = ?, due_at_iso = ? WHERE id = ?;", (due_ts, due_iso, rid))
+                elif rec == "weekly":
+                    while due_ts < now_ts:
+                        due_ts += 7 * 86400
+                    due_iso = datetime.fromtimestamp(due_ts).isoformat()
+                    conn.execute("UPDATE reminders SET due_at_timestamp = ?, due_at_iso = ? WHERE id = ?;", (due_ts, due_iso, rid))
+                elif rec == "monthly":
+                    while due_ts < now_ts:
+                        due_ts += 30 * 86400
+                    due_iso = datetime.fromtimestamp(due_ts).isoformat()
+                    conn.execute("UPDATE reminders SET due_at_timestamp = ?, due_at_iso = ? WHERE id = ?;", (due_ts, due_iso, rid))
+                else:
+                    conn.execute("UPDATE reminders SET status = 'completed', reminded_at = CURRENT_TIMESTAMP WHERE id = ?;", (rid,))
+
+            if session_id:
+                cursor = conn.execute("""
+                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, recurrence
+                    FROM reminders
+                    WHERE (session_id = ? OR session_id = 'default_session') AND status = 'pending' AND due_at_timestamp >= ?
+                    ORDER BY due_at_timestamp ASC;
+                """, (session_id, now_ts - 5))
+            else:
+                cursor = conn.execute("""
+                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, recurrence
+                    FROM reminders
+                    WHERE status = 'pending' AND due_at_timestamp >= ?
+                    ORDER BY due_at_timestamp ASC;
+                """, (now_ts - 5,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_recent_reminders_history(self, session_id: Optional[str] = None, limit: int = 5) -> List[Dict[str, Any]]:
+        """Retrieve recent reminders that completed, fired, or were cancelled today for context reasoning."""
         with self._get_connection() as conn:
             if session_id:
                 cursor = conn.execute("""
-                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at
+                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, reminded_at, recurrence
                     FROM reminders
-                    WHERE session_id = ? AND status = 'pending'
-                    ORDER BY due_at_timestamp ASC;
-                """, (session_id,))
+                    WHERE (session_id = ? OR session_id = 'default_session') AND status IN ('completed', 'reminded', 'acknowledged', 'cancelled')
+                    ORDER BY rowid DESC LIMIT ?;
+                """, (session_id, limit))
             else:
                 cursor = conn.execute("""
-                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at
+                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, reminded_at, recurrence
                     FROM reminders
-                    WHERE status = 'pending'
-                    ORDER BY due_at_timestamp ASC;
-                """)
+                    WHERE status IN ('completed', 'reminded', 'acknowledged', 'cancelled')
+                    ORDER BY rowid DESC LIMIT ?;
+                """, (limit,))
             return [dict(row) for row in cursor.fetchall()]
 
     def get_due_reminders(self, current_timestamp: Optional[float] = None) -> List[Dict[str, Any]]:
         ts = current_timestamp if current_timestamp is not None else time.time()
         with self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at
+                SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, recurrence
                 FROM reminders
                 WHERE status = 'pending' AND due_at_timestamp <= ?
                 ORDER BY due_at_timestamp ASC;
             """, (ts,))
             return [dict(row) for row in cursor.fetchall()]
 
-    def get_due_or_recently_triggered_reminders(self, current_timestamp: Optional[float] = None, window_seconds: float = 120.0) -> List[Dict[str, Any]]:
+    def get_due_or_recently_triggered_reminders(
+        self,
+        current_timestamp: Optional[float] = None,
+        window_seconds: float = 120.0,
+        session_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
         ts = current_timestamp if current_timestamp is not None else time.time()
         min_ts = ts - window_seconds
         with self._get_connection() as conn:
-            cursor = conn.execute("""
-                SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, reminded_at
-                FROM reminders
-                WHERE (status = 'pending' AND due_at_timestamp <= ?)
-                   OR (status = 'reminded' AND due_at_timestamp >= ? AND due_at_timestamp <= ?)
-                ORDER BY due_at_timestamp ASC;
-            """, (ts, min_ts, ts + 15))
+            if session_id:
+                cursor = conn.execute("""
+                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, reminded_at, recurrence
+                    FROM reminders
+                    WHERE ((status = 'pending' AND due_at_timestamp <= ?)
+                       OR (status = 'reminded' AND due_at_timestamp >= ? AND due_at_timestamp <= ?))
+                      AND (session_id = ? OR session_id = 'default_session')
+                    ORDER BY due_at_timestamp ASC;
+                """, (ts, min_ts, ts + 15, session_id))
+            else:
+                cursor = conn.execute("""
+                    SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, reminded_at, recurrence
+                    FROM reminders
+                    WHERE (status = 'pending' AND due_at_timestamp <= ?)
+                       OR (status = 'reminded' AND due_at_timestamp >= ? AND due_at_timestamp <= ?)
+                    ORDER BY due_at_timestamp ASC;
+                """, (ts, min_ts, ts + 15))
             return [dict(row) for row in cursor.fetchall()]
 
     def mark_reminder_triggered(self, reminder_id: str) -> bool:
@@ -665,9 +764,41 @@ class ConversationStorage:
 
     def mark_reminder_acknowledged(self, reminder_id: str) -> bool:
         with self._get_connection() as conn:
+            cursor = conn.execute("SELECT * FROM reminders WHERE id = ?;", (reminder_id,))
+            row = cursor.fetchone()
+            if row:
+                rec = row["recurrence"] if "recurrence" in row.keys() and row["recurrence"] else "once"
+                if rec == "daily":
+                    next_ts = row["due_at_timestamp"] + 86400
+                    next_iso = datetime.fromtimestamp(next_ts).isoformat()
+                    conn.execute("""
+                        UPDATE reminders
+                        SET status = 'pending', due_at_timestamp = ?, due_at_iso = ?, reminded_at = CURRENT_TIMESTAMP
+                        WHERE id = ?;
+                    """, (next_ts, next_iso, reminder_id))
+                    return True
+                elif rec == "weekly":
+                    next_ts = row["due_at_timestamp"] + 7 * 86400
+                    next_iso = datetime.fromtimestamp(next_ts).isoformat()
+                    conn.execute("""
+                        UPDATE reminders
+                        SET status = 'pending', due_at_timestamp = ?, due_at_iso = ?, reminded_at = CURRENT_TIMESTAMP
+                        WHERE id = ?;
+                    """, (next_ts, next_iso, reminder_id))
+                    return True
+                elif rec == "monthly":
+                    next_ts = row["due_at_timestamp"] + 30 * 86400
+                    next_iso = datetime.fromtimestamp(next_ts).isoformat()
+                    conn.execute("""
+                        UPDATE reminders
+                        SET status = 'pending', due_at_timestamp = ?, due_at_iso = ?, reminded_at = CURRENT_TIMESTAMP
+                        WHERE id = ?;
+                    """, (next_ts, next_iso, reminder_id))
+                    return True
+
             cursor = conn.execute("""
                 UPDATE reminders
-                SET status = 'acknowledged', reminded_at = CURRENT_TIMESTAMP
+                SET status = 'completed', reminded_at = CURRENT_TIMESTAMP
                 WHERE id = ?;
             """, (reminder_id,))
             return cursor.rowcount > 0
@@ -678,13 +809,13 @@ class ConversationStorage:
                 cursor = conn.execute("""
                     UPDATE reminders
                     SET status = 'cancelled'
-                    WHERE (id = ? OR text LIKE ?) AND session_id = ? AND status = 'pending';
+                    WHERE (id = ? OR text LIKE ?) AND (session_id = ? OR session_id = 'default_session') AND status IN ('pending', 'reminded');
                 """, (reminder_id, f"%{reminder_id}%", session_id))
             else:
                 cursor = conn.execute("""
                     UPDATE reminders
                     SET status = 'cancelled'
-                    WHERE (id = ? OR text LIKE ?) AND status = 'pending';
+                    WHERE (id = ? OR text LIKE ?) AND status IN ('pending', 'reminded');
                 """, (reminder_id, f"%{reminder_id}%"))
             return cursor.rowcount > 0
 
@@ -694,12 +825,12 @@ class ConversationStorage:
                 cursor = conn.execute("""
                     UPDATE reminders
                     SET status = 'cancelled'
-                    WHERE session_id = ? AND status = 'pending';
+                    WHERE (session_id = ? OR session_id = 'default_session') AND status IN ('pending', 'reminded');
                 """, (session_id,))
             else:
                 cursor = conn.execute("""
                     UPDATE reminders
                     SET status = 'cancelled'
-                    WHERE status = 'pending';
+                    WHERE status IN ('pending', 'reminded');
                 """)
             return cursor.rowcount

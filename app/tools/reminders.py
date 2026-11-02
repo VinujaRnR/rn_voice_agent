@@ -15,38 +15,193 @@ storage = ConversationStorage()
 fired_reminders_log: List[Dict[str, Any]] = []
 
 
+def convert_first_person_to_second_person(text: str) -> str:
+    """Convert first-person pronouns ('my', 'me', 'myself', 'mine', 'our', etc.) to second-person ('your', 'you', etc.) for natural voice reminders."""
+    if not text:
+        return ""
+
+    replacements = [
+        (r"\bmyself\b", "yourself"),
+        (r"\bourselves\b", "yourselves"),
+        (r"\bmine\b", "yours"),
+        (r"\bours\b", "yours"),
+        (r"\bmy\b", "your"),
+        (r"\bour\b", "your"),
+        (r"\bi\s*am\b", "you are"),
+        (r"\bi'm\b", "you're"),
+        (r"\bi've\b", "you've"),
+        (r"\bi'll\b", "you'll"),
+        (r"\bi'd\b", "you'd"),
+        (r"\bi\b", "you"),
+        (r"\bme\b", "you"),
+    ]
+
+    res = text
+    for pattern, rep in replacements:
+        def _rep(match, repl=rep):
+            m = match.group(0)
+            if m.isupper():
+                return repl.upper()
+            elif m[0].isupper():
+                return repl.capitalize()
+            return repl.lower()
+
+        res = re.sub(pattern, _rep, res, flags=re.IGNORECASE)
+
+    return res
+
+
+INCOMPLETE_REMINDER_VERBS = {
+    "take", "get", "buy", "call", "check", "do", "bring", "pick", "send", "turn",
+    "make", "put", "give", "tell", "pay", "order", "eat", "drink", "see", "watch",
+    "read", "write", "find", "clean", "fix", "water", "prepare", "finish", "start",
+    "stop", "inspect", "feed", "wash", "remind", "look", "listen", "switch", "turn off",
+    "turn on", "switch off", "switch on", "pick up", "look for", "listen to", "check on"
+}
+
+PLACEHOLDER_TASKS = {
+    "", "your scheduled reminder", "a reminder", "reminder", "something", "it", "this", "that"
+}
+
+
+def is_incomplete_reminder_task(task_text: str, query: str) -> tuple[bool, Optional[str]]:
+    """Determine if a reminder task description is incomplete or lacking context (e.g. 'take', 'call', 'buy').
+
+    Returns (is_incomplete, identified_verb).
+    """
+    if not task_text:
+        return True, None
+
+    clean_task = task_text.strip().lower()
+    if clean_task.startswith("to "):
+        clean_task = clean_task[3:].strip()
+
+    if clean_task in PLACEHOLDER_TASKS:
+        return True, None
+
+    if clean_task in INCOMPLETE_REMINDER_VERBS:
+        return True, clean_task
+
+    words = clean_task.split()
+    if len(words) == 1 and words[0] in INCOMPLETE_REMINDER_VERBS:
+        return True, words[0]
+
+    dangling_particles = (" to", " for", " about", " with", " on", " of", " at", " in", " up", " off", " from")
+    if clean_task.endswith(dangling_particles):
+        return True, words[0] if words else None
+
+    clean_query = query.strip().lower().rstrip(".?!")
+    end_match = re.search(r"\b(?:remind\s+(?:me|us)?\s*(?:to|about|for)?|set\s+(?:a\s+)?reminder\s*(?:to|for|about)?)\s*(\w+)?$", clean_query)
+    if end_match:
+        trailing = (end_match.group(1) or "").strip()
+        if not trailing or trailing in INCOMPLETE_REMINDER_VERBS:
+            return True, trailing or (words[0] if words else None)
+
+    return False, None
+
+
+def generate_reminder_clarification_question(
+    verb: Optional[str] = None,
+    partial_task: Optional[str] = None,
+    time_label: Optional[str] = None
+) -> str:
+    """Generate a natural clarifying question asking for the missing reminder context."""
+    v = (verb or partial_task or "").lower().strip()
+    time_suffix = f" {time_label}" if time_label else ""
+    when_suffix = "?" if time_label else ", and when would you like the reminder?"
+    if v == "take":
+        return f"What would you like me to remind you to take{time_suffix}{when_suffix}"
+    elif v in ["call", "phone", "contact"]:
+        return f"Who would you like me to remind you to call{time_suffix}{when_suffix}"
+    elif v in ["buy", "get", "purchase", "pick up", "order"]:
+        return f"What would you like me to remind you to {v}{time_suffix}{when_suffix}"
+    elif v in ["turn off", "turn on", "switch off", "switch on"]:
+        return f"Which device or lights should I remind you to {v}{time_suffix}{when_suffix}"
+    elif v and v not in PLACEHOLDER_TASKS:
+        return f"What would you like me to remind you to {v}{time_suffix}{when_suffix}"
+    return "What would you like me to remind you about, and when should I set it for?"
+
+
 def parse_target_clock_time(time_str: str, now: Optional[datetime] = None) -> int:
-    """Parse clock time string like '4:30 p.m.', '4:30pm', '11.50 am', '16:30', '5 pm' and return delay in seconds."""
+    """Parse clock time string like '4:30 p.m.', '4:30pm', '11.50 am', '16:30', '5 pm', '3:00', '3 o'clock' and return delay in seconds."""
     now = now or datetime.now()
-    clean = time_str.lower().replace("a.m.", "am").replace("p.m.", "pm").strip()
+    from app.commands.device_registry import normalize_spoken_numbers
+    clean = normalize_spoken_numbers(time_str.lower().replace("a.m.", "am").replace("p.m.", "pm").strip())
+    clean = re.sub(r"\b(\d{1,2})\s*(?:o['’]?\s*clock|oclock)\b", r"\1:00", clean)
+    clean = re.sub(r"\b(\d{1,2}(?::\d{2})?)\s*(?:in the afternoon|in the evening|at night|tonight)\b", r"\1 pm", clean)
+    clean = re.sub(r"\b(\d{1,2}(?::\d{2})?)\s*(?:in the morning)\b", r"\1 am", clean)
+
     m = re.search(r"(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?", clean)
     if not m:
         return 600
 
-    hour = int(m.group(1))
+    raw_hour = int(m.group(1))
     minute = int(m.group(2) or 0)
     meridiem = m.group(3)
 
-    if meridiem == "pm" and hour < 12:
-        hour += 12
-    elif meridiem == "am" and hour == 12:
-        hour = 0
-    elif not meridiem and hour < 7:
-        if now.hour >= 12:
-            hour += 12
-
-    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    diff = (target - now).total_seconds()
-
-    # If within 2 minutes in the past, treat as immediate
-    if -120 <= diff <= 0:
-        return 10
-    # If more than 2 minutes in the past, assume next day
-    if diff < -120:
-        target += timedelta(days=1)
+    if meridiem == "pm":
+        hour = 12 if raw_hour == 12 else (raw_hour + 12 if raw_hour < 12 else raw_hour)
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         diff = (target - now).total_seconds()
+        if diff < -120:
+            target += timedelta(days=1)
+            diff = (target - now).total_seconds()
+        if -120 <= diff <= 0:
+            return 10
+        return max(5, int(diff))
 
-    return max(5, int(diff))
+    elif meridiem == "am":
+        hour = 0 if raw_hour == 12 else raw_hour
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        diff = (target - now).total_seconds()
+        if diff < -120:
+            target += timedelta(days=1)
+            diff = (target - now).total_seconds()
+        if -120 <= diff <= 0:
+            return 10
+        return max(5, int(diff))
+
+    elif raw_hour > 12:
+        hour = raw_hour
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        diff = (target - now).total_seconds()
+        if diff < -120:
+            target += timedelta(days=1)
+            diff = (target - now).total_seconds()
+        if -120 <= diff <= 0:
+            return 10
+        return max(5, int(diff))
+
+    else:
+        # 12-hour format without meridiem (e.g. "3 o'clock", "3:00", "8")
+        am_hour = 0 if raw_hour == 12 else raw_hour
+        pm_hour = 12 if raw_hour == 12 else raw_hour + 12
+
+        # 1-6 o'clock defaults to afternoon/evening (PM) unless specified
+        if 1 <= raw_hour <= 6:
+            hours_to_check = [pm_hour]
+        elif 7 <= raw_hour <= 11:
+            hours_to_check = [am_hour, pm_hour]
+        else:
+            # 12 o'clock defaults to noon (12:00 PM)
+            hours_to_check = [12]
+
+        candidates = []
+        for h in hours_to_check:
+            for day_offset in [0, 1]:
+                cand = (now + timedelta(days=day_offset)).replace(hour=h, minute=minute, second=0, microsecond=0)
+                diff = (cand - now).total_seconds()
+                if diff >= -120:
+                    candidates.append((diff, cand))
+
+        if not candidates:
+            return 600
+
+        candidates.sort(key=lambda x: x[0])
+        chosen_diff, _ = candidates[0]
+        if -120 <= chosen_diff <= 0:
+            return 10
+        return max(5, int(chosen_diff))
 
 
 def parse_reminder_expression(query: str, now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -55,8 +210,22 @@ def parse_reminder_expression(query: str, now: Optional[datetime] = None) -> Dic
     q = query.strip()
     clean = q.lower()
 
-    # 1. Normalize speech typos and dot time representation (e.g. "turn of" -> "turn off", "11.50 am" -> "11:50 am")
+    # 1. Normalize speech typos, number words, and clock representations
     clean = re.sub(r"\bturn of\b", "turn off", clean)
+    from app.commands.device_registry import normalize_spoken_numbers
+    clean = normalize_spoken_numbers(clean)
+
+    # Convert o'clock expressions (e.g. "3 o'clock" -> "3:00", "3 oclock" -> "3:00", "3 o clock" -> "3:00")
+    clean = re.sub(r"\b(\d{1,2})\s*(?:o['’]?\s*clock|oclock)\b", r"\1:00", clean)
+
+    # Convert time of day qualifiers
+    clean = re.sub(r"\b(\d{1,2}(?::\d{2})?)\s*(?:in the afternoon|in the evening|at night|tonight)\b", r"\1 pm", clean)
+    clean = re.sub(r"\b(\d{1,2}(?::\d{2})?)\s*(?:in the morning)\b", r"\1 am", clean)
+
+    # Convert standalone "at <hour>" or "by <hour>"
+    clean = re.sub(r"\b(?:at|by)\s+(\d{1,2})\b(?!\s*(?:[:.]|seconds?|secs?|minutes?|mins?|hours?|hrs?|days?|weeks?|months?|am|pm|a\.m\.|p\.m\.))", r"at \1:00", clean)
+
+    # Convert dot time representation (e.g. "11.50 am" -> "11:50 am", "11.50" -> "11:50")
     clean = re.sub(r"\b(\d{1,2})\.(\d{2})\s*(am|pm|a\.m\.|p\.m\.)", r"\1:\2 \3", clean)
     clean = re.sub(r"\b(\d{1,2})\.(\d{2})\b", r"\1:\2", clean)
 
@@ -64,10 +233,10 @@ def parse_reminder_expression(query: str, now: Optional[datetime] = None) -> Dic
     detected_time_str = "10 minutes"
     is_clock_time = False
 
-    # 2. Check for clock time like "in 11.50 am", "at 4:30 pm", "for 11:50 am", "by 5 pm"
+    # 2. Check for clock time like "in 11.50 am", "at 4:30 pm", "for 11:50 am", "by 5 pm", "in 3:00", "at 3:00"
     clock_m = re.search(r"\b(?:at|in|for|by|on)?\s*(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.))\b", clean, re.IGNORECASE)
     if not clock_m:
-        clock_m = re.search(r"\b(\d{1,2}[:.]\d{2}\s*(?:am|pm|a\.m\.|p\.m\.)?)\b", clean, re.IGNORECASE)
+        clock_m = re.search(r"\b(?:at|in|for|by|on)?\s*(\d{1,2}[:.]\d{2}\s*(?:am|pm|a\.m\.|p\.m\.)?)\b", clean, re.IGNORECASE)
 
     if clock_m:
         time_token = clock_m.group(1)
@@ -96,23 +265,49 @@ def parse_reminder_expression(query: str, now: Optional[datetime] = None) -> Dic
                 detected_time_str = f"in {int(qty) if qty.is_integer() else qty} minute{'s' if qty != 1 else ''}"
 
     # 3. Extract task text - strip leading conversational phrasing
+    recurrence = None
+    if re.search(r"\b(?:every\s+day|everyday|daily)\b", clean):
+        recurrence = "daily"
+    elif re.search(r"\b(?:every\s+week|weekly)\b", clean):
+        recurrence = "weekly"
+    elif re.search(r"\b(?:every\s+month|monthly)\b", clean):
+        recurrence = "monthly"
+    elif re.search(r"\bcustom\b", clean):
+        recurrence = "custom"
+    elif re.search(r"\b(?:only\s+for\s+that\s+day|only\s+that\s+day|only\s+today|just\s+today|just\s+for\s+today|today\s+only|once)\b", clean):
+        recurrence = "once"
+
     extracted = re.sub(
-        r"^(?:(?:could|can|would|will)\s+you\s+)?(?:please\s+)?(?:sarah\s*,?\s*)?(?:remind\s+(?:me|us)?\s*(?:to|about|for)?|set\s+(?:a\s+)?reminder\s+(?:to|for|about)?|schedule\s+(?:a\s+)?(?:reminder|schedule)\s+(?:to|for)?)\s*",
+        r"^(?:(?:could|can|would|will)\s+you\s+)?(?:please\s+)?(?:sarah\s*,?\s*)?(?:remind\s+(?:me|us)?\s*(?:to|about|for)?|set\s+(?:a\s+)?(?:daily\s+|weekly\s+|monthly\s+|custom\s+)?reminder\s+(?:to|for|about)?|schedule\s+(?:a\s+)?(?:daily\s+|weekly\s+|monthly\s+|custom\s+)?(?:reminder|schedule)\s+(?:to|for)?)\s*",
         "",
         clean,
         flags=re.IGNORECASE
     ).strip()
 
-    # If time prefix is at the beginning (e.g. "at 4:30 pm to take pills")
-    time_prefix = re.match(r"^(?:at|in|for|by|on)?\s*\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)\s*(?:to|about|for)?\s*", extracted, re.IGNORECASE)
-    if time_prefix:
-        extracted = extracted[time_prefix.end():]
+    # Strip recurrence keywords from extracted task text
+    extracted = re.sub(
+        r"\b(?:every\s+day|everyday|daily|every\s+week|weekly|every\s+month|monthly|custom|only\s+for\s+that\s+day|only\s+that\s+day|only\s+today|just\s+today|just\s+for\s+today|today\s+only|once)\b",
+        "",
+        extracted,
+        flags=re.IGNORECASE
+    ).strip(" .,!?")
+
+    # If time prefix is at the beginning (e.g. "at 4:30 pm to take pills", "in 3:00 to take pills")
+    time_prefix = re.match(
+        r"^(?:at|in|for|by|on)?\s*\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?\s*(?:to|about|for)?\s*",
+        extracted,
+        re.IGNORECASE
+    )
+    if time_prefix and time_prefix.end() > 0 and time_prefix.group(0).strip():
+        cand = extracted[time_prefix.end():]
+        if cand.strip():
+            extracted = cand
     else:
         dur_prefix = re.match(r"^(?:in|for)?\s*\d+(?:\.\d+)?\s*(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)\s*(?:to|about|for)?\s*", extracted, re.IGNORECASE)
         if dur_prefix:
             extracted = extracted[dur_prefix.end():]
 
-    # If time suffix is at the end (e.g. "to turn off the lights in 11.50 am")
+    # If time suffix is at the end (e.g. "to turn off the lights in 11.50 am", "to take my pills in 3:00", "to take my pills at 3:00")
     extracted = re.sub(
         r"\b(?:at|in|for|by|on)\s+\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?.*$",
         "",
@@ -120,7 +315,7 @@ def parse_reminder_expression(query: str, now: Optional[datetime] = None) -> Dic
         flags=re.IGNORECASE
     ).strip()
     extracted = re.sub(
-        r"\b\d{1,2}[:.]\d{2}\s*(?:am|pm|a\.m\.|p\.m\.).*$",
+        r"\b\d{1,2}[:.]\d{2}\s*(?:am|pm|a\.m\.|p\.m\.)?.*$",
         "",
         extracted,
         flags=re.IGNORECASE
@@ -133,6 +328,7 @@ def parse_reminder_expression(query: str, now: Optional[datetime] = None) -> Dic
     ).strip(" .,!?")
 
     extracted = re.sub(r"^(?:to|about|for)\s+", "", extracted).strip(" .,!?")
+    extracted = convert_first_person_to_second_person(extracted)
 
     if not extracted:
         extracted = "your scheduled reminder"
@@ -141,7 +337,8 @@ def parse_reminder_expression(query: str, now: Optional[datetime] = None) -> Dic
         "text": extracted,
         "delay_seconds": max(5, delay_seconds),
         "delay_label": detected_time_str,
-        "is_clock_time": is_clock_time
+        "is_clock_time": is_clock_time,
+        "recurrence": recurrence
     }
 
 
@@ -150,9 +347,11 @@ def set_reminder(
     delay_seconds: Optional[int] = None,
     delay_minutes: Optional[float] = None,
     target_time: Optional[str] = None,
-    session_id: str = "default_session"
+    session_id: str = "default_session",
+    recurrence: Optional[str] = None
 ) -> Dict[str, Any]:
     """Create a persistent scheduled reminder in SQLite database."""
+    text = convert_first_person_to_second_person(text)
     effective_seconds = delay_seconds
     if target_time and effective_seconds is None:
         effective_seconds = parse_target_clock_time(target_time)
@@ -179,6 +378,7 @@ def set_reminder(
     due_iso = round_dt.isoformat()
 
     reminder_id = f"rem_{uuid.uuid4().hex[:8]}"
+    stored_recurrence = recurrence or "once"
 
     storage.create_reminder(
         reminder_id=reminder_id,
@@ -186,18 +386,29 @@ def set_reminder(
         text=text,
         due_at_timestamp=due_ts,
         due_at_iso=due_iso,
-        delay_seconds=effective_seconds
+        delay_seconds=effective_seconds,
+        recurrence=stored_recurrence
     )
 
     minutes_calc = round(effective_seconds / 60, 1)
     if minutes_calc < 1:
         time_text = f"{effective_seconds} seconds"
-    elif minutes_calc.is_integer():
-        time_text = f"{int(minutes_calc)} minute{'s' if minutes_calc != 1 else ''}"
+    elif minutes_calc < 60:
+        time_text = f"{int(minutes_calc) if minutes_calc.is_integer() else minutes_calc} minute{'s' if minutes_calc != 1 else ''}"
+    elif minutes_calc < 1440:
+        hours_calc = round(effective_seconds / 3600, 1)
+        time_text = f"{int(hours_calc) if hours_calc.is_integer() else hours_calc} hour{'s' if hours_calc != 1 else ''}"
     else:
-        time_text = f"{minutes_calc} minutes"
+        days_calc = round(effective_seconds / 86400, 1)
+        time_text = f"{int(days_calc) if days_calc.is_integer() else days_calc} day{'s' if days_calc != 1 else ''}"
 
-    feedback = f"Okay, I've set a reminder to '{text}' for {due_formatted} (in {time_text})."
+    if recurrence is None:
+        # Prompt user for recurrence choice
+        feedback = f"Okay, I've set a reminder to '{text}' for {due_formatted} (in {time_text}). Would you like this reminder for daily, weekly, monthly, custom, or only for that day?"
+    elif recurrence == "once":
+        feedback = f"Okay, I've set a reminder to '{text}' for {due_formatted} (in {time_text}) for only that day."
+    else:
+        feedback = f"Okay, I've set a {recurrence} reminder to '{text}' for {due_formatted} (in {time_text})."
 
     return {
         "status": "success",
@@ -207,13 +418,56 @@ def set_reminder(
         "due_timestamp": due_ts,
         "due_iso": due_iso,
         "delay_seconds": effective_seconds,
+        "recurrence": stored_recurrence,
         "feedback": feedback
+    }
+
+
+def update_reminder_recurrence(
+    reminder_id: str,
+    recurrence: str,
+    session_id: Optional[str] = None
+) -> Dict[str, Any]:
+    """Update recurrence for an active reminder."""
+    clean_rec = recurrence.lower().strip()
+    if any(w in clean_rec for w in ["every day", "everyday", "daily"]):
+        norm_rec = "daily"
+        rec_label = "daily"
+    elif any(w in clean_rec for w in ["every week", "weekly"]):
+        norm_rec = "weekly"
+        rec_label = "weekly"
+    elif any(w in clean_rec for w in ["every month", "monthly"]):
+        norm_rec = "monthly"
+        rec_label = "monthly"
+    elif "custom" in clean_rec:
+        norm_rec = "custom"
+        rec_label = "custom"
+    elif any(w in clean_rec for w in ["only for that day", "only that day", "only today", "just today", "just for today", "today only", "once", "that day", "today", "for that day"]):
+        norm_rec = "once"
+        rec_label = "only for that day"
+    else:
+        norm_rec = "once"
+        rec_label = "only for that day"
+
+    success = storage.update_reminder_recurrence(reminder_id, norm_rec, session_id=session_id)
+    if success:
+        return {
+            "status": "success",
+            "reminder_id": reminder_id,
+            "recurrence": norm_rec,
+            "feedback": f"Got it, I've set this reminder for {rec_label}."
+        }
+    return {
+        "status": "error",
+        "reminder_id": reminder_id,
+        "feedback": "I couldn't find the reminder to update."
     }
 
 
 def list_reminders(session_id: Optional[str] = None) -> Dict[str, Any]:
     """Retrieve all pending active reminders and schedules."""
     items = storage.get_active_reminders(session_id)
+    recent_history = storage.get_recent_reminders_history(session_id, limit=5)
     now_ts = time.time()
 
     formatted = []
@@ -226,19 +480,43 @@ def list_reminders(session_id: Optional[str] = None) -> Dict[str, Any]:
         elif dt.second <= 15 and item.get("delay_seconds", 0) > 60:
             dt = dt - timedelta(seconds=dt.second)
         time_str = dt.strftime("%I:%M %p")
+        task_label = convert_first_person_to_second_person(item["text"])
         formatted.append({
             "id": item["id"],
-            "text": item["text"],
+            "text": task_label,
             "due_at": time_str,
             "remaining_minutes": remaining_mins,
+            "recurrence": item.get("recurrence", "once"),
             "created_at": item["created_at"]
         })
 
+    recent_completed_formatted = []
+    for r in recent_history:
+        r_dt = datetime.fromtimestamp(r["due_at_timestamp"])
+        r_time_str = r_dt.strftime("%I:%M %p")
+        r_task = convert_first_person_to_second_person(r["text"])
+        recent_completed_formatted.append({
+            "id": r["id"],
+            "text": r_task,
+            "scheduled_time": r_time_str,
+            "status": r.get("status"),
+            "recurrence": r.get("recurrence", "once")
+        })
+
     if not formatted:
-        speech = "You have no active reminders or scheduled tasks right now."
+        if recent_completed_formatted:
+            last = recent_completed_formatted[0]
+            if last["status"] in ["completed", "reminded", "acknowledged"]:
+                speech = f"You have no active reminders right now. Your earlier reminder to '{last['text']}' was set for {last['scheduled_time']} today and has already completed."
+            elif last["status"] == "cancelled":
+                speech = f"You have no active reminders right now. Your earlier reminder to '{last['text']}' was cancelled."
+            else:
+                speech = "You have no active reminders or scheduled tasks right now."
+        else:
+            speech = "You have no active reminders or scheduled tasks right now."
     elif len(formatted) == 1:
         item = formatted[0]
-        speech = f"You have 1 reminder: '{item['text']}' scheduled for {item['due_at']} (in about {item['remaining_minutes']} minutes)."
+        speech = f"You have 1 active reminder: '{item['text']}' scheduled for {item['due_at']} (in about {item['remaining_minutes']} minutes)."
     else:
         parts = [f"'{it['text']}' at {it['due_at']}" for it in formatted]
         speech = f"You have {len(formatted)} active reminders: {', '.join(parts)}."
@@ -247,6 +525,7 @@ def list_reminders(session_id: Optional[str] = None) -> Dict[str, Any]:
         "status": "success",
         "count": len(formatted),
         "reminders": formatted,
+        "recent_completed": recent_completed_formatted,
         "feedback": speech
     }
 
@@ -262,13 +541,16 @@ def parse_cancel_expression(query: str) -> str:
     clean = re.sub(r"\b(?:right\s+now|now|please|immediately|for\s+me)\b", "", clean).strip()
 
     # Generic cancellation of all reminders
-    # e.g., "cancel reminder", "cancel reminders", "cancel my reminders", "clear all reminders", "cancel all"
+    # e.g., "cancel reminder", "cancel reminders", "cancel my reminders", "clear all reminders", "cancel all", "no i just need to clear it"
+    if re.fullmatch(r"(?:no\s*,?\s*)?(?:i\s+)?(?:just\s+)?(?:need|want)\s+to\s+(?:clear|cancel|delete|remove)\s+(?:it|that|them|all|everything)?.*", clean):
+        return "all"
     if re.fullmatch(r"(?:cancel|clear|remove|delete)\s+(?:all\s+)?(?:the\s+|my\s+)?reminders?", clean):
         return "all"
     if clean in [
         "cancel", "cancel reminder", "cancel reminders", "cancel my reminder", "cancel my reminders",
         "clear reminder", "clear reminders", "cancel all", "cancel all reminders", "all", "everything",
-        "cancel the reminder", "cancel the reminders"
+        "cancel the reminder", "cancel the reminders", "clear it", "clear them", "cancel that",
+        "no i just need to clear it", "just clear it", "i just need to clear it", "clear", "cancel that cancel that"
     ]:
         return "all"
 
@@ -310,17 +592,16 @@ def cancel_reminder(reminder_id_or_keyword: str, session_id: Optional[str] = Non
     is_all = clean_kw in [
         "all", "everything", "all reminders", "all my reminders",
         "reminder", "reminders", "the reminder", "the reminders",
-        "my reminder", "my reminders", ""
+        "my reminder", "my reminders", "it", "that", "them", "clear it", "clear", ""
     ]
     if is_all:
         count = storage.clear_all_reminders(session_id)
-        if count == 0 and session_id:
-            count = storage.clear_all_reminders(None)
 
         # Clear matching items in fired_reminders_log as well
         for item in fired_reminders_log:
-            item["acknowledged"] = True
-            item["status"] = "cancelled"
+            if not session_id or item.get("session_id") in [session_id, "default_session"]:
+                item["acknowledged"] = True
+                item["status"] = "cancelled"
 
         if count == 0:
             return {
@@ -435,7 +716,6 @@ def cancel_reminder(reminder_id_or_keyword: str, session_id: Optional[str] = Non
         cancelled_names = []
         for rem in matching_reminders:
             storage.cancel_reminder(rem["id"], session_id)
-            storage.cancel_reminder(rem["id"], None)
             for item in fired_reminders_log:
                 if item.get("id") == rem["id"]:
                     item["acknowledged"] = True
@@ -456,8 +736,6 @@ def cancel_reminder(reminder_id_or_keyword: str, session_id: Optional[str] = Non
 
     # Fallback to direct DB cancel by keyword / ID
     success = storage.cancel_reminder(clean_kw, session_id) or storage.cancel_reminder(target_clean, session_id)
-    if not success and session_id:
-        success = storage.cancel_reminder(clean_kw, None) or storage.cancel_reminder(target_clean, None)
 
     if success:
         return {
@@ -473,23 +751,26 @@ def cancel_reminder(reminder_id_or_keyword: str, session_id: Optional[str] = Non
     }
 
 
-def check_due_reminders(window_seconds: float = 120.0) -> List[Dict[str, Any]]:
+def check_due_reminders(window_seconds: float = 120.0, session_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """Poll database for any reminders that have reached their due time or were recently triggered."""
     now_ts = time.time()
-    due_items = storage.get_due_or_recently_triggered_reminders(now_ts, window_seconds=window_seconds)
+    due_items = storage.get_due_or_recently_triggered_reminders(now_ts, window_seconds=window_seconds, session_id=session_id)
     triggered = []
 
     for item in due_items:
         if item.get("status") == "pending":
             storage.mark_reminder_triggered(item["id"])
+        task_text = convert_first_person_to_second_person(item["text"])
+        if task_text.lower().startswith("to "):
+            task_text = task_text[3:].strip()
         item_data = {
             "id": item["id"],
             "session_id": item["session_id"],
-            "text": item["text"],
+            "text": task_text,
             "due_at": datetime.fromtimestamp(item["due_at_timestamp"]).strftime("%I:%M %p"),
             "triggered_at": item.get("reminded_at") or datetime.now().isoformat(),
             "triggered_timestamp": item["due_at_timestamp"],
-            "speech": f"Reminder alert: It's time to {item['text']}."
+            "speech": f"Reminder alert: It's time to {task_text}."
         }
         # Update or add in fired log
         existing = next((f for f in fired_reminders_log if f.get("id") == item["id"]), None)

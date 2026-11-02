@@ -11,7 +11,7 @@ from app.tools.places import search_places, extract_location, extract_cuisine
 from app.tools.web_search import search_web
 from app.tools.device_status import get_device_status, list_devices
 from app.tools.device_control import control_device, schedule_device_action
-from app.tools.reminders import set_reminder, list_reminders, cancel_reminder, parse_reminder_expression, parse_cancel_expression
+from app.tools.reminders import set_reminder, list_reminders, cancel_reminder, parse_reminder_expression, parse_cancel_expression, update_reminder_recurrence
 from app.context.memory import conversation_memory
 from app.stt.accent_normalizer import normalize_accent_transcript
 
@@ -252,7 +252,12 @@ class ConversationManager:
             prompt_parts.append(f"Previous Request: {prev_user_msg}")
             prompt_parts.append(f"Clarification Question Asked: {clarify_question}")
             prompt_parts.append(f"User Clarification Answer: {new_user_text}")
-            if pending.get("action") == "weather":
+            if pending.get("action") == "set_reminder_recurrence":
+                prompt_parts.append(
+                    f"The user is answering your question about reminder recurrence: {pending.get('parameters')}. "
+                    "Acknowledge the chosen recurrence warmly in mode='answer' (e.g., 'Got it, I've set this reminder for daily.')."
+                )
+            elif pending.get("action") == "weather":
                 prompt_parts.append(
                     "The user is answering your clarifying question about where they are heading or what location they want. "
                     "Please provide the weather forecast for their clarified destination."
@@ -322,6 +327,49 @@ class ConversationManager:
 
         pending = self.get_pending_action(session_id)
 
+        # Check pending reminder recurrence clarification
+        if pending and pending.get("action") == "set_reminder_recurrence":
+            rec_match = None
+            if re.search(r"\b(?:daily|every\s+day|everyday)\b", clean_text):
+                rec_match = "daily"
+            elif re.search(r"\b(?:weekly|every\s+week)\b", clean_text):
+                rec_match = "weekly"
+            elif re.search(r"\b(?:monthly|every\s+month)\b", clean_text):
+                rec_match = "monthly"
+            elif re.search(r"\bcustom\b", clean_text):
+                rec_match = "custom"
+            elif re.search(r"\b(?:only\s+for\s+that\s+day|only\s+that\s+day|only\s+today|just\s+today|just\s+for\s+today|today\s+only|once|that\s+day|today|for\s+that\s+day)\b", clean_text):
+                rec_match = "once"
+
+            if rec_match:
+                rem_id = pending.get("parameters", {}).get("reminder_id")
+                upd = update_reminder_recurrence(rem_id, rec_match, session_id=session_id)
+                self.resolve_pending_action(session_id)
+                from app.gemini.schemas import ReminderSpec
+                return GeminiResponse(
+                    mode="answer",
+                    speech=upd.get("feedback", f"Got it, I've set this reminder for {rec_match}."),
+                    command=None,
+                    missing_fields=[],
+                    reminder=ReminderSpec(
+                        action_type="set",
+                        task=pending.get("parameters", {}).get("task"),
+                        target_time=pending.get("parameters", {}).get("target_time"),
+                        recurrence=rec_match
+                    )
+                )
+            elif clean_text in ["cancel", "stop", "never mind", "abort"]:
+                self.cancel_pending_action(session_id)
+                return GeminiResponse(
+                    mode="answer",
+                    speech="Okay, cancelled.",
+                    command=None,
+                    missing_fields=[]
+                )
+            else:
+                self.cancel_pending_action(session_id)
+                pending = None
+
         # 1b. Check for clear conversation / history command
         is_clear_history = bool(re.search(
             r"\b(?:clear|delete|wipe|reset|erase)\s+(?:the\s+|all\s+|my\s+|entire\s+)?(?:history|conversation|chat|messages)\b",
@@ -376,16 +424,32 @@ class ConversationManager:
 
         # 2c. Check for setting reminders ("remind me to...", "set a reminder to...")
         is_set_reminder = bool(re.search(
-            r"\b(?:remind me|set a reminder|schedule a reminder|remind us|create a reminder)\b",
+            r"\b(?:remind\s+(?:me|us)|set\s+(?:a\s+)?(?:daily\s+|weekly\s+|monthly\s+|custom\s+)?reminder|schedule\s+(?:a\s+)?(?:daily\s+|weekly\s+|monthly\s+|custom\s+)?reminder|create\s+(?:a\s+)?(?:daily\s+|weekly\s+|monthly\s+|custom\s+)?reminder)\b",
             clean_text
         ))
         if is_set_reminder:
             parsed = parse_reminder_expression(raw_text)
+            rec = parsed.get("recurrence")
             set_res = set_reminder(
                 text=parsed["text"],
                 delay_seconds=parsed["delay_seconds"],
-                session_id=session_id
+                session_id=session_id,
+                recurrence=rec
             )
+            if rec is None:
+                self.save_pending_action(
+                    session_id=session_id,
+                    action="set_reminder_recurrence",
+                    parameters={
+                        "reminder_id": set_res["reminder_id"],
+                        "task": parsed["text"],
+                        "target_time": parsed.get("delay_label")
+                    },
+                    missing_fields=["recurrence"]
+                )
+            else:
+                self.resolve_pending_action(session_id)
+
             from app.gemini.schemas import ReminderSpec
             return GeminiResponse(
                 mode="answer",
@@ -396,7 +460,8 @@ class ConversationManager:
                     action_type="set",
                     task=parsed["text"],
                     target_time=parsed.get("delay_label"),
-                    delay_minutes=round(parsed["delay_seconds"] / 60, 1)
+                    delay_minutes=round(parsed["delay_seconds"] / 60, 1),
+                    recurrence=rec
                 )
             )
 

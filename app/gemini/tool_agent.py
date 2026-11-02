@@ -77,8 +77,9 @@ def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             text = args.get("text", "")
             delay_secs = args.get("delay_seconds")
             delay_mins = args.get("delay_minutes")
+            rec = args.get("recurrence")
             sess = args.get("session_id", "default_session")
-            return set_reminder(text=text, delay_seconds=delay_secs, delay_minutes=delay_mins, session_id=sess)
+            return set_reminder(text=text, delay_seconds=delay_secs, delay_minutes=delay_mins, session_id=sess, recurrence=rec)
 
         elif name == "list_reminders":
             sess = args.get("session_id")
@@ -113,6 +114,20 @@ def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 "status": "clarification_needed",
                 "speech": "Where are you heading, or would you like the weather forecast for your current location in Colombo?"
+            }
+
+        elif name == "clarify_reminder_context":
+            from app.tools.reminders import generate_reminder_clarification_question
+            verb = args.get("verb")
+            partial_task = args.get("partial_task")
+            time_label = args.get("time_label")
+            speech = generate_reminder_clarification_question(verb, partial_task, time_label)
+            return {
+                "status": "clarification_needed",
+                "partial_verb": verb,
+                "partial_task": partial_task,
+                "time_label": time_label,
+                "speech": speech
             }
 
         return {"error": f"Unknown or unauthorized tool: '{name}'"}
@@ -222,8 +237,20 @@ class ToolAgent:
                     conversation_memory.set_referenced_entity(session_id, "location", found_city)
                     tools_to_run.append(("get_weather", {"city": found_city, "forecast_days": 1}))
 
-        # Time intent
-        if any(w in q for w in ["what time", "current time", "time in", "what's the time", "what date", "date is it"]):
+        # Check if query is asking about a reminder's scheduled time or following up on reminders
+        is_asking_reminder_time = (
+            any(w in q for w in ["at what time is", "what time is the reminder", "when is my reminder", "reminders right now and what time", "what time does the reminder", "what time was the reminder"]) or
+            q.strip() in ["at what time", "what time", "which time", "what time is it at", "for when"]
+        )
+        if not is_asking_reminder_time and session_id:
+            recent_msgs = conversation_memory.get_recent_messages(session_id, limit=3)
+            recent_text = " ".join([m.get("content", "").lower() for m in recent_msgs])
+            if any(w in recent_text for w in ["reminder", "reminders", "schedule", "pill", "bills", "medicin"]):
+                if any(w in q for w in ["at what time", "what time", "when", "which time", "what time is it at", "for when", "the previously you mentioned", "previously you mentioned", "earlier you said"]):
+                    is_asking_reminder_time = True
+
+        # Time intent (clock / current time, only if not asking about a reminder's time)
+        if not is_asking_reminder_time and any(w in q for w in ["what time is it", "current time", "time in", "what's the time", "what date", "date is it", "local time"]):
             tz = "Asia/Colombo"
             found_tz_city = None
             for city_key, tz_val in [("tokyo", "Asia/Tokyo"), ("london", "Europe/London"), ("new york", "America/New_York"), ("colombo", "Asia/Colombo"), ("paris", "Europe/Paris")]:
@@ -262,21 +289,48 @@ class ToolAgent:
             tools_to_run.append(("search_web", {"query": clean_q or q}))
 
         # Reminder intents
-        is_cancel_rem = bool(re.search(r"\b(?:cancel|clear|remove|delete)\b.*?\breminders?\b", q)) or q.strip().startswith(("cancel reminder", "clear reminder", "cancel reminders", "clear reminders", "cancel all reminders", "cancel"))
-        is_list_rem = bool(re.search(r"\b(?:what are my reminders|list reminders|list my reminders|show reminders|show my reminders|active reminders|what reminders|reminders list)\b", q))
-        is_set_rem = bool(re.search(r"\b(?:remind me|set a reminder|schedule a reminder|remind us|create a reminder)\b", q))
+        is_set_rem = bool(re.search(r"\b(?:remind\s+(?:me|us)|set\s+(?:a\s+)?(?:daily\s+|weekly\s+|monthly\s+|custom\s+)?reminder|schedule\s+(?:a\s+)?(?:daily\s+|weekly\s+|monthly\s+|custom\s+)?reminder|create\s+(?:a\s+)?(?:daily\s+|weekly\s+|monthly\s+|custom\s+)?reminder)\b", q))
+        is_cancel_rem = (
+            bool(re.search(r"\b(?:cancel|clear|remove|delete)\b.*?\b(?:reminders?|it|that|all)\b", q)) or
+            any(q.strip().startswith(prefix) for prefix in [
+                "cancel reminder", "clear reminder", "cancel reminders", "clear reminders",
+                "cancel all reminders", "cancel all", "clear all", "cancel", "clear it", "just clear it"
+            ]) or
+            any(phrase in q for phrase in ["need to clear it", "want to clear it", "cancel that", "clear it", "clear them"])
+        )
+        is_list_rem = (
+            is_asking_reminder_time or
+            bool(re.search(
+                r"\b(?:what are my reminders|list reminders|list my reminders|show reminders|show my reminders|active reminders|what reminders|reminders list|how many reminders|any reminders|my reminders|reminders right now|check reminders|view reminders|schedule|my schedule|today'?s schedule|what'?s on my schedule|what is on my schedule|when is my reminder|at what time is the reminder|what time is the reminder|previously you mentioned there'?s a reminder|previously you mentioned there is a reminder)\b",
+                q
+            )) or
+            q.strip() in ["schedule", "my schedule", "reminders", "active reminders", "how many reminders", "how many reminders right now", "at what time", "what time", "reminders right now and what time those reminders at"] or
+            bool(re.search(r"\b(?:how many|what|list|show|check|any|view)\s+.*?\breminders?\b", q)) or
+            bool(re.search(r"\breminders?\s+right now\b", q))
+        )
 
-        if is_cancel_rem and not any(w in q for w in ["what", "how", "list", "show"]):
+        if is_set_rem:
+            from app.tools.reminders import parse_reminder_expression, is_incomplete_reminder_task
+            parsed = parse_reminder_expression(normalized)
+            is_inc, verb = is_incomplete_reminder_task(parsed["text"], normalized)
+            if is_inc:
+                tools_to_run.append(("clarify_reminder_context", {
+                    "partial_task": parsed["text"],
+                    "verb": verb,
+                    "time_label": parsed.get("delay_label") if parsed.get("is_clock_time") else None,
+                    "query": normalized
+                }))
+            else:
+                tools_to_run.append(("set_reminder", {
+                    "text": parsed["text"],
+                    "delay_seconds": parsed["delay_seconds"],
+                    "recurrence": parsed.get("recurrence")
+                }))
+        elif is_cancel_rem and not any(w in q for w in ["what", "how", "list", "show"]):
             target_kw = parse_cancel_expression(normalized)
             tools_to_run.append(("cancel_reminder", {"reminder_id": target_kw}))
         elif is_list_rem:
             tools_to_run.append(("list_reminders", {}))
-        elif is_set_rem:
-            parsed = parse_reminder_expression(normalized)
-            tools_to_run.append(("set_reminder", {
-                "text": parsed["text"],
-                "delay_seconds": parsed["delay_seconds"]
-            }))
 
         # Past conversation recall intent
         is_recall = bool(re.search(
@@ -405,25 +459,132 @@ class ToolAgent:
                         spoken = f"The current weather: {spoken}"
                     if "search_web" in tool_results and "top web search results" not in spoken.lower():
                         spoken = f"Top web search results: {spoken}"
+
+                    if "clarify_reminder_context" in tool_results:
+                        crc = tool_results["clarify_reminder_context"]
+                        clarify_speech = crc.get("speech") or "What would you like me to remind you about, and when should I set it for?"
+                        if "?" not in spoken or not any(w in spoken.lower() for w in ["what", "who", "which", "when", "remind"]):
+                            spoken = clarify_speech
+                        from app.conversation.manager import ConversationManager
+                        ConversationManager().save_pending_action(
+                            session_id=session_id,
+                            action="set_reminder_task",
+                            parameters={
+                                "partial_verb": crc.get("partial_verb"),
+                                "partial_task": crc.get("partial_task"),
+                                "time_label": crc.get("time_label"),
+                                "query": query
+                            },
+                            missing_fields=["task", "target_time"]
+                        )
+                        return GeminiResponse(
+                            reasoning=f"Reminder request '{query}' lacks specific task context. Clarification requested.",
+                            mode="clarify",
+                            speech=spoken,
+                            command=None,
+                            missing_fields=["task", "target_time"],
+                            reminder=None,
+                            reminder_already_executed=False
+                        )
+                    reminder_obj = None
                     if "set_reminder" in tool_results:
-                        rem_fb = tool_results["set_reminder"].get("feedback")
+                        from app.gemini.schemas import ReminderSpec
+                        from app.tools.reminders import parse_reminder_expression
+                        sr = tool_results["set_reminder"]
+                        parsed_expr = parse_reminder_expression(query)
+                        user_rec = parsed_expr.get("recurrence")
+                        reminder_obj = ReminderSpec(
+                            action_type="set",
+                            task=sr.get("text"),
+                            target_time=sr.get("due_at"),
+                            delay_minutes=round(sr.get("delay_seconds", 600) / 60, 1),
+                            recurrence=user_rec
+                        )
+                        rem_fb = sr.get("feedback")
                         time_unit_re = re.compile(r"\b(?:min|mins|minute|minutes|sec|secs|second|seconds|hour|hours)\b", re.IGNORECASE)
-                        if rem_fb and time_unit_re.search(query) and not time_unit_re.search(spoken):
+                        task_name = (sr.get("text") or "").lower()
+                        clock_in_spoken = True
+                        if parsed_expr.get("is_clock_time"):
+                            clean_target = (sr.get("due_at") or "").lstrip("0").split()[0].lower()
+                            clean_target_nodot = clean_target.replace(":", "")
+                            spoken_nodot = spoken.replace(":", "")
+                            clock_in_spoken = clean_target in spoken.lower() or clean_target_nodot in spoken_nodot
+
+                        if rem_fb and (task_name not in spoken.lower() or not clock_in_spoken or (time_unit_re.search(query) and not time_unit_re.search(spoken))):
                             spoken = rem_fb
+                        elif user_rec is None and not any(w in spoken.lower() for w in ["daily", "weekly", "monthly", "custom", "only for that day", "only that day"]):
+                            rec_q = "Would you like this reminder for daily, weekly, monthly, custom, or only for that day?"
+                            spoken = f"{spoken.rstrip('. ')}. {rec_q}"
+
+                        if user_rec is None:
+                            from app.conversation.manager import ConversationManager
+                            ConversationManager().save_pending_action(
+                                session_id=session_id,
+                                action="set_reminder_recurrence",
+                                parameters={
+                                    "reminder_id": sr["reminder_id"],
+                                    "task": sr.get("text"),
+                                    "target_time": sr.get("due_at")
+                                },
+                                missing_fields=["recurrence"]
+                            )
+
+                    if "list_reminders" in tool_results:
+                        from app.gemini.schemas import ReminderSpec
+                        reminder_obj = ReminderSpec(action_type="list")
+                        lrem = tool_results["list_reminders"]
+                        if lrem.get("count") == 0 and any(k in spoken.lower() for k in ["you have 1 active", "you have one active", "you have a reminder"]):
+                            spoken = lrem.get("feedback")
+
+                    if "cancel_reminder" in tool_results:
+                        from app.gemini.schemas import ReminderSpec
+                        reminder_obj = ReminderSpec(action_type="cancel")
+                        det_cancel = tool_results["cancel_reminder"]
+                        if det_cancel.get("status") == "not_found" and "cancelled" in spoken.lower():
+                            spoken = det_cancel.get("feedback")
+
                     mode_val = "device_command" if device_command_obj else "answer"
                     reasoning_trace = f"Synthesized evidence from executed tools: {list(tool_results.keys())}."
+                    has_rem_tool = any(k in tool_results for k in ["set_reminder", "list_reminders", "cancel_reminder"])
                     return GeminiResponse(
                         reasoning=reasoning_trace,
                         mode=mode_val,
                         speech=spoken,
                         command=device_command_obj,
-                        missing_fields=[]
+                        missing_fields=[],
+                        reminder=reminder_obj,
+                        reminder_already_executed=has_rem_tool
                     )
             except Exception as e:
                 logger.warning(f"Gemini live inference fallback ({e}). Using deterministic tool synthesis.")
 
         # 3. Deterministic tool evidence synthesis
         spoken_parts = []
+
+        if "clarify_reminder_context" in tool_results:
+            crc = tool_results["clarify_reminder_context"]
+            clarify_speech = crc.get("speech") or "What would you like me to remind you about, and when should I set it for?"
+            from app.conversation.manager import ConversationManager
+            ConversationManager().save_pending_action(
+                session_id=session_id,
+                action="set_reminder_task",
+                parameters={
+                    "partial_verb": crc.get("partial_verb"),
+                    "partial_task": crc.get("partial_task"),
+                    "time_label": crc.get("time_label"),
+                    "query": query
+                },
+                missing_fields=["task", "target_time"]
+            )
+            return GeminiResponse(
+                reasoning=f"Reminder request '{query}' lacks specific task context. Clarification requested.",
+                mode="clarify",
+                speech=clarify_speech,
+                command=None,
+                missing_fields=["task", "target_time"],
+                reminder=None,
+                reminder_already_executed=False
+            )
 
         if "clarify_weather_context" in tool_results:
             spoken_parts.append("Where are you heading, or would you like the weather forecast for your current location in Colombo?")
@@ -463,17 +624,45 @@ class ToolAgent:
             cd = tool_results["control_device"]
             spoken_parts.append(cd.get("feedback", "Sending command to RN Hub."))
 
+        det_reminder_obj = None
         if "set_reminder" in tool_results:
             rem = tool_results["set_reminder"]
             spoken_parts.append(rem.get("feedback", "Reminder scheduled."))
+            from app.gemini.schemas import ReminderSpec
+            from app.tools.reminders import parse_reminder_expression
+            parsed_expr = parse_reminder_expression(query)
+            user_rec = parsed_expr.get("recurrence")
+            det_reminder_obj = ReminderSpec(
+                action_type="set",
+                task=rem.get("text"),
+                target_time=rem.get("due_at"),
+                delay_minutes=round(rem.get("delay_seconds", 600) / 60, 1),
+                recurrence=user_rec
+            )
+            if user_rec is None:
+                from app.conversation.manager import ConversationManager
+                ConversationManager().save_pending_action(
+                    session_id=session_id,
+                    action="set_reminder_recurrence",
+                    parameters={
+                        "reminder_id": rem["reminder_id"],
+                        "task": rem.get("text"),
+                        "target_time": rem.get("due_at")
+                    },
+                    missing_fields=["recurrence"]
+                )
 
         if "list_reminders" in tool_results:
             lrem = tool_results["list_reminders"]
             spoken_parts.append(lrem.get("feedback", "Here are your active reminders."))
+            from app.gemini.schemas import ReminderSpec
+            det_reminder_obj = ReminderSpec(action_type="list")
 
         if "cancel_reminder" in tool_results:
             crem = tool_results["cancel_reminder"]
             spoken_parts.append(crem.get("feedback", "Reminder cancelled."))
+            from app.gemini.schemas import ReminderSpec
+            det_reminder_obj = ReminderSpec(action_type="cancel")
 
         if "search_past_conversations" in tool_results:
             sp = tool_results["search_past_conversations"]
@@ -492,12 +681,15 @@ class ToolAgent:
 
         final_speech = " ".join(spoken_parts)
         mode = "device_command" if device_command_obj else "answer"
+        has_rem_tool = any(k in tool_results for k in ["set_reminder", "list_reminders", "cancel_reminder"])
 
         return GeminiResponse(
             mode=mode,
             speech=final_speech,
             command=device_command_obj,
-            missing_fields=[]
+            missing_fields=[],
+            reminder=det_reminder_obj,
+            reminder_already_executed=has_rem_tool
         )
 
 

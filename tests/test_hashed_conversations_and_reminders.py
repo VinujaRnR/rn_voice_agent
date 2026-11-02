@@ -179,17 +179,22 @@ async def test_voice_assistant_reminder_instructions():
 
 
 @pytest.mark.asyncio
-async def test_proactive_due_reminder_trigger():
+async def test_proactive_due_reminder_trigger(storage):
     """Verify due reminders trigger proactive alerts for the voice assistant."""
     sess = f"proactive_rem_sess_{uuid.uuid4().hex[:6]}"
-    # Set reminder that is immediately due
     res = set_reminder("take vitamin D supplement", delay_seconds=5, session_id=sess)
     assert res["status"] == "success"
     rid = res["reminder_id"]
 
-    # Sleep until due time (5 seconds)
-    import asyncio
-    await asyncio.sleep(5.1)
+    # Mark as immediately due for test execution to avoid race with external polling
+    storage.create_reminder(
+        reminder_id=rid,
+        session_id=sess,
+        text="take vitamin D supplement",
+        due_at_timestamp=time.time() - 1,
+        due_at_iso="2026-11-02T10:00:00",
+        delay_seconds=0
+    )
 
     # Query due endpoint
     transport = ASGITransport(app=app)

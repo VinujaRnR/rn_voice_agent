@@ -10,3 +10,4 @@ pytest-asyncio
 faster-whisper
 av<14,>=11
 python-multipart
+edge-tts

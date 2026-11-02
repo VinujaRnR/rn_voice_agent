@@ -128,6 +128,10 @@ class ReminderSpec(BaseModel):
         default=None,
         description="Delay in minutes from current time (e.g. 10, 15, 1)"
     )
+    recurrence: Optional[str] = Field(
+        default=None,
+        description="Recurrence: 'daily', 'weekly', 'monthly', 'custom', or 'once' (only for that day)"
+    )
 
 
 class GeminiResponse(BaseModel):
@@ -163,6 +167,10 @@ class GeminiResponse(BaseModel):
     reminder: Optional[ReminderSpec] = Field(
         default=None,
         description="Structured reminder or schedule details reasoned by Sarah"
+    )
+    reminder_already_executed: bool = Field(
+        default=False,
+        description="Whether the reminder action was already executed by tool agent"
     )
 
     @model_validator(mode="after")

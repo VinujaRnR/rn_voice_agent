@@ -7,6 +7,7 @@ from app.tools.reminders import (
     set_reminder,
     list_reminders,
     cancel_reminder,
+    update_reminder_recurrence,
     check_due_reminders,
     fired_reminders_log
 )
@@ -18,6 +19,12 @@ class CreateReminderRequest(BaseModel):
     text: str = Field(..., description="The reminder task or message")
     delay_minutes: Optional[float] = Field(None, description="Delay in minutes until the reminder triggers")
     delay_seconds: Optional[int] = Field(None, description="Delay in seconds until the reminder triggers")
+    session_id: Optional[str] = Field("default_session", description="Session identifier")
+    recurrence: Optional[str] = Field(None, description="Recurrence: 'daily', 'weekly', 'monthly', 'custom', or 'once'")
+
+
+class UpdateRecurrenceRequest(BaseModel):
+    recurrence: str = Field(..., description="Recurrence: 'daily', 'weekly', 'monthly', 'custom', or 'once'")
     session_id: Optional[str] = Field("default_session", description="Session identifier")
 
 
@@ -36,9 +43,19 @@ async def create_reminder_endpoint(payload: CreateReminderRequest):
         text=payload.text.strip(),
         delay_seconds=payload.delay_seconds,
         delay_minutes=payload.delay_minutes,
-        session_id=payload.session_id or "default_session"
+        session_id=payload.session_id or "default_session",
+        recurrence=payload.recurrence
     )
     return result
+
+
+@router.patch("/{reminder_id}/recurrence")
+async def update_recurrence_endpoint(reminder_id: str, payload: UpdateRecurrenceRequest):
+    """Update recurrence of a reminder."""
+    res = update_reminder_recurrence(reminder_id, payload.recurrence, session_id=payload.session_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("feedback", "Reminder not found."))
+    return res
 
 
 @router.get("/")
@@ -63,9 +80,9 @@ async def acknowledge_reminder_endpoint(payload: AckReminderRequest):
 
 
 @router.get("/due")
-async def check_due_endpoint(since_seconds: int = 120):
+async def check_due_endpoint(since_seconds: int = 120, session_id: Optional[str] = None):
     """Poll for reminders that have reached their trigger time or were recently triggered."""
-    due = check_due_reminders(window_seconds=float(since_seconds))
+    due = check_due_reminders(window_seconds=float(since_seconds), session_id=session_id)
     all_triggered = [item for item in due if not item.get("acknowledged")]
     return {
         "due_count": len(all_triggered),

@@ -157,6 +157,10 @@ TOOLS: List[Dict[str, Any]] = [
                 "target_time": {
                     "type": "string",
                     "description": "Optional clock time (e.g. '4:30 PM', '16:00')."
+                },
+                "recurrence": {
+                    "type": "string",
+                    "description": "Optional recurrence: 'daily', 'weekly', 'monthly', 'custom', or 'once' (only for that day)."
                 }
             },
             "required": ["text"]

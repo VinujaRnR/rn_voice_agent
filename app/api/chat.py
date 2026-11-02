@@ -107,11 +107,151 @@ async def chat_endpoint(request: ChatRequest):
         else:
             conversation_manager.touch_session(session_id)
 
+        # Check if user is answering a pending reminder clarification (task or recurrence)
+        gemini_response = None
+        is_answering_pending_reminder = False
+        is_answering_recurrence = False
+        pending_action_data = conversation_manager.get_pending_action(session_id)
+        if pending_action_data and pending_action_data.get("action") == "set_reminder_recurrence":
+            clean_ans = user_query.lower().strip()
+            rec_match = None
+            if re.search(r"\b(?:daily|every\s+day|everyday)\b", clean_ans):
+                rec_match = "daily"
+            elif re.search(r"\b(?:weekly|every\s+week)\b", clean_ans):
+                rec_match = "weekly"
+            elif re.search(r"\b(?:monthly|every\s+month)\b", clean_ans):
+                rec_match = "monthly"
+            elif re.search(r"\bcustom\b", clean_ans):
+                rec_match = "custom"
+            elif re.search(r"\b(?:only\s+for\s+that\s+day|only\s+that\s+day|only\s+today|just\s+today|just\s+for\s+today|today\s+only|once|that\s+day|today|for\s+that\s+day)\b", clean_ans):
+                rec_match = "once"
+
+            if rec_match:
+                is_answering_pending_reminder = True
+                is_answering_recurrence = True
+                from app.tools.reminders import update_reminder_recurrence
+                from app.gemini.schemas import ReminderSpec
+                rem_id = pending_action_data.get("parameters", {}).get("reminder_id")
+                upd = update_reminder_recurrence(rem_id, rec_match, session_id=session_id)
+                conversation_manager.resolve_pending_action(session_id)
+                gemini_response = GeminiResponse(
+                    mode="answer",
+                    speech=upd.get("feedback", f"Got it, I've set this reminder for {rec_match}."),
+                    command=None,
+                    missing_fields=[],
+                    reminder=ReminderSpec(
+                        action_type="set",
+                        task=pending_action_data.get("parameters", {}).get("task"),
+                        target_time=pending_action_data.get("parameters", {}).get("target_time"),
+                        recurrence=rec_match
+                    )
+                )
+            elif clean_ans in ["cancel", "stop", "never mind", "abort"]:
+                is_answering_pending_reminder = True
+                is_answering_recurrence = True
+                conversation_manager.cancel_pending_action(session_id)
+                gemini_response = GeminiResponse(
+                    mode="answer",
+                    speech="Okay, cancelled.",
+                    command=None,
+                    missing_fields=[]
+                )
+            else:
+                conversation_manager.cancel_pending_action(session_id)
+
+        elif pending_action_data and pending_action_data.get("action") == "set_reminder_task":
+            clean_ans = user_query.strip()
+            if clean_ans.lower() in ["cancel", "stop", "never mind", "abort"]:
+                is_answering_pending_reminder = True
+                conversation_manager.cancel_pending_action(session_id)
+                gemini_response = GeminiResponse(
+                    mode="answer",
+                    speech="Okay, cancelled.",
+                    command=None,
+                    missing_fields=[]
+                )
+            else:
+                from app.conversation.manager import is_general_question_or_chitchat
+                is_topic_switch = (
+                    is_general_question_or_chitchat(user_query) or
+                    any(w in clean_ans.lower() for w in ["turn on", "turn off", "switch on", "switch off", "weather", "forecast", "what is", "who is", "why is", "tell me about"])
+                )
+                if not is_topic_switch:
+                    is_answering_pending_reminder = True
+                    from app.tools.reminders import parse_reminder_expression, is_incomplete_reminder_task, set_reminder
+                    from app.gemini.schemas import ReminderSpec
+                    params = pending_action_data.get("parameters", {})
+                    partial_verb = (params.get("partial_verb") or "").strip()
+                    time_label = params.get("time_label")
+
+                    combined_query = clean_ans
+                    if partial_verb and not clean_ans.lower().startswith(partial_verb.lower()):
+                        combined_query = f"{partial_verb} {clean_ans}"
+                    if time_label and not any(t in clean_ans.lower() for t in ["am", "pm", "o'clock", "oclock", "minutes", "mins", "hours", "secs"]):
+                        combined_query = f"{combined_query} {time_label}"
+
+                    parsed = parse_reminder_expression(combined_query)
+                    is_inc, verb = is_incomplete_reminder_task(parsed["text"], combined_query)
+                    if is_inc:
+                        from app.tools.reminders import generate_reminder_clarification_question
+                        speech = generate_reminder_clarification_question(verb or partial_verb, parsed["text"], parsed.get("delay_label") if parsed.get("is_clock_time") else None)
+                        gemini_response = GeminiResponse(
+                            reasoning="Reminder task still incomplete. Requesting clarification.",
+                            mode="clarify",
+                            speech=speech,
+                            command=None,
+                            missing_fields=["task", "target_time"]
+                        )
+                    else:
+                        rec = parsed.get("recurrence")
+                        sr = set_reminder(
+                            text=parsed["text"],
+                            delay_seconds=parsed["delay_seconds"],
+                            recurrence=rec,
+                            session_id=session_id
+                        )
+                        rem_fb = sr.get("feedback")
+                        if rec is None:
+                            if not any(w in rem_fb.lower() for w in ["daily", "weekly", "monthly", "custom", "only for that day", "only that day"]):
+                                rec_q = "Would you like this reminder for daily, weekly, monthly, custom, or only for that day?"
+                                speech = f"{rem_fb} {rec_q}"
+                            else:
+                                speech = rem_fb
+                            conversation_manager.save_pending_action(
+                                session_id=session_id,
+                                action="set_reminder_recurrence",
+                                parameters={
+                                    "reminder_id": sr["reminder_id"],
+                                    "task": sr.get("text"),
+                                    "target_time": sr.get("due_at")
+                                },
+                                missing_fields=["recurrence"]
+                            )
+                        else:
+                            speech = rem_fb
+                            conversation_manager.resolve_pending_action(session_id)
+
+                        gemini_response = GeminiResponse(
+                            mode="answer",
+                            speech=speech,
+                            command=None,
+                            missing_fields=[],
+                            reminder=ReminderSpec(
+                                action_type="set",
+                                task=sr.get("text"),
+                                target_time=sr.get("due_at"),
+                                delay_minutes=round(sr.get("delay_seconds", 600) / 60, 1),
+                                recurrence=rec
+                            ),
+                            reminder_already_executed=True
+                        )
+                else:
+                    conversation_manager.cancel_pending_action(session_id)
+
         # Primary Path: Use Gemini LLM reasoning whenever Gemini API is configured
         has_gemini = bool(gemini_client.api_key and not gemini_client.api_key.startswith("YOUR_API_KEY"))
-        gemini_response = None
 
-        if has_gemini:
+        if gemini_response is None and has_gemini:
             try:
                 if tool_agent.needs_tools(user_query, session_id=session_id):
                     gemini_response = await tool_agent.run(user_query, session_id)
@@ -174,14 +314,17 @@ async def chat_endpoint(request: ChatRequest):
 
     # Update pending actions based on Gemini response
     if gemini_response.mode == "clarify":
-        action = "set_power" if "light" in user_query.lower() else "unknown"
-        state = "off" if "off" in user_query.lower() else "on"
-        conversation_manager.save_pending_action(
-            session_id=session_id,
-            action=action,
-            parameters={"state": state},
-            missing_fields=gemini_response.missing_fields or ["device_id"]
-        )
+        is_reminder_clarify = any(f in (gemini_response.missing_fields or []) for f in ["task", "target_time", "recurrence"])
+        curr_pending = conversation_manager.get_pending_action(session_id)
+        if not is_reminder_clarify and not (curr_pending and curr_pending.get("action") in ["set_reminder_task", "set_reminder_recurrence"]):
+            action = "set_power" if "light" in user_query.lower() else "unknown"
+            state = "off" if "off" in user_query.lower() else "on"
+            conversation_manager.save_pending_action(
+                session_id=session_id,
+                action=action,
+                parameters={"state": state},
+                missing_fields=gemini_response.missing_fields or ["device_id"]
+            )
     elif gemini_response.mode == "device_command":
         if gemini_response.is_executable():
             cmd_obj = gemini_response.command
@@ -265,19 +408,59 @@ async def chat_endpoint(request: ChatRequest):
             )
 
     # Handle reasoned reminders
-    if getattr(gemini_response, "reminder", None):
+    if getattr(gemini_response, "reminder", None) and not is_answering_pending_reminder and not is_answering_recurrence and not getattr(gemini_response, "reminder_already_executed", False):
         rem = gemini_response.reminder
         if rem.action_type == "set":
-            from app.tools.reminders import set_reminder
+            from app.tools.reminders import set_reminder, parse_reminder_expression
+            rec = rem.recurrence
+            if not rec:
+                parsed_expr = parse_reminder_expression(user_query)
+                rec = parsed_expr.get("recurrence")
+
             rem_res = set_reminder(
                 text=rem.task or "your reminder",
                 delay_minutes=rem.delay_minutes,
                 target_time=rem.target_time,
-                session_id=session_id
+                session_id=session_id,
+                recurrence=rec
             )
             time_unit_re = re.compile(r"\b(?:min|mins|minute|minutes|sec|secs|second|seconds|hour|hours)\b", re.IGNORECASE)
-            if time_unit_re.search(user_query) and not time_unit_re.search(gemini_response.speech or ""):
+            task_clean = (rem.task or "").lower()
+            clock_in_speech = True
+            parsed_expr = parse_reminder_expression(user_query)
+            if parsed_expr.get("is_clock_time"):
+                clean_target = (rem_res.get("due_at") or "").lstrip("0").split()[0].lower()
+                clean_target_nodot = clean_target.replace(":", "")
+                speech_nodot = (gemini_response.speech or "").replace(":", "")
+                clock_in_speech = clean_target in (gemini_response.speech or "").lower() or clean_target_nodot in speech_nodot
+
+            if rem_res.get("feedback") and (
+                task_clean not in (gemini_response.speech or "").lower()
+                or not clock_in_speech
+                or (time_unit_re.search(user_query) and not time_unit_re.search(gemini_response.speech or ""))
+            ):
                 gemini_response.speech = rem_res.get("feedback", gemini_response.speech)
+
+            if rec is None:
+                conversation_manager.save_pending_action(
+                    session_id=session_id,
+                    action="set_reminder_recurrence",
+                    parameters={
+                        "reminder_id": rem_res["reminder_id"],
+                        "task": rem.task or "your reminder",
+                        "target_time": rem.target_time
+                    },
+                    missing_fields=["recurrence"]
+                )
+                rec_question = "Would you like this reminder for daily, weekly, monthly, custom, or only for that day?"
+                if "daily" not in (gemini_response.speech or "").lower():
+                    clean_sp = (gemini_response.speech or "").strip()
+                    if clean_sp.endswith("."):
+                        gemini_response.speech = f"{clean_sp} {rec_question}"
+                    else:
+                        gemini_response.speech = f"{clean_sp}. {rec_question}"
+            else:
+                conversation_manager.resolve_pending_action(session_id)
         elif rem.action_type == "cancel":
             from app.tools.reminders import cancel_reminder, parse_cancel_expression
             target = rem.task

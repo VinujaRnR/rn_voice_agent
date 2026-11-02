@@ -63,6 +63,13 @@ class ContextBuilder:
             for dev in all_devices
         ]
 
+        # Active and recent reminder schedules
+        try:
+            from app.tools.reminders import list_reminders
+            rem_info = list_reminders(session_id=session_id)
+        except Exception:
+            rem_info = {"count": 0, "reminders": [], "recent_completed": []}
+
         return {
             "assistant": "RN Assistant",
             "runtime": {
@@ -70,6 +77,11 @@ class ContextBuilder:
                 "current_datetime": now_dt.isoformat(),
                 "formatted_time": now_dt.strftime("%I:%M %p"),
                 "formatted_date": now_dt.strftime("%A, %d %B %Y")
+            },
+            "reminders": {
+                "active_count": rem_info.get("count", 0),
+                "active_reminders": rem_info.get("reminders", []),
+                "recently_completed": rem_info.get("recent_completed", [])
             },
             "location": {
                 "default_city": prefs.get("default_city", "Colombo"),
