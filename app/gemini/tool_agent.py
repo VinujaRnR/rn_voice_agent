@@ -251,8 +251,14 @@ class ToolAgent:
             tools_to_run.append(("search_places", {"query": query_term, "location": loc}))
 
         # Web search intent
-        if any(w in q for w in ["search the internet", "search web", "latest research", "robotics research", "google search", "news on"]):
-            clean_q = q.replace("search the internet for", "").replace("search the web for", "").replace("search for", "").strip()
+        if any(w in q for w in ["search the internet", "search web", "search internet", "in internet", "on the internet", "on internet", "latest research", "robotics research", "google search", "news on"]) or ("search" in q and ("internet" in q or "web" in q or "google" in q)) or ("find this" in q and "internet" in q):
+            clean_q = re.sub(r"\b(?:can you\s+)?(?:find this in internet and give the search and top results|search the internet for|search the web for|search internet for|search for|find this in internet)\b", "", q, flags=re.IGNORECASE).strip()
+            if (not clean_q or any(ref in clean_q for ref in ["this", "that", "it"])) and session_id:
+                recent_msgs = conversation_memory.get_recent_messages(session_id, limit=3)
+                for m in reversed(recent_msgs):
+                    if m.get("role") == "user" and m.get("content") != query:
+                        clean_q = m.get("content")
+                        break
             tools_to_run.append(("search_web", {"query": clean_q or q}))
 
         # Reminder intents
@@ -447,7 +453,7 @@ class ToolAgent:
             sw = tool_results["search_web"]
             results = sw.get("results", [])
             if results:
-                spoken_parts.append(f"According to recent research on {sw.get('query')}: {results[0].get('snippet')[:140]}...")
+                spoken_parts.append(f"Top web search results for {sw.get('query')}: {results[0].get('snippet')[:140]}...")
 
         if "schedule_device_action" in tool_results:
             sch = tool_results["schedule_device_action"]

@@ -399,6 +399,20 @@ class AssistantApp {
     if (!userText || !userText.trim()) return;
     const cleanText = userText.trim();
 
+    // Barge-in: Stop any active speech immediately when user inputs a command
+    if (typeof window.stopSpeaking === 'function') {
+      window.stopSpeaking();
+    }
+    this.isTTSSpeaking = false;
+    if (this.ttsWatchdog) {
+      clearTimeout(this.ttsWatchdog);
+      this.ttsWatchdog = null;
+    }
+    if (this.resumeTimeout) {
+      clearTimeout(this.resumeTimeout);
+      this.resumeTimeout = null;
+    }
+
     // 1. Display user query
     if (this.transcriptEl) {
       this.transcriptEl.textContent = cleanText;
@@ -474,7 +488,7 @@ class AssistantApp {
     // Handle Device Command Execution states
     if (data.mode === 'device_command' && data.command) {
       const devId = data.command.device_id;
-      const devName = devId === '98a316e6b658' ? 'Testing Farm Lights' : devId;
+      const devName = devId === '98a316e6b658' ? 'Testing Farm Lights' : (data.command.device_name || devId);
       const action = data.command.action;
       const params = Object.entries(data.command.parameters || {})
         .map(([k, v]) => `${k}=${v}`)
@@ -483,20 +497,19 @@ class AssistantApp {
       displayText = speechText || `Sending ${action} command to ${devName}${params ? ' (' + params + ')' : ''}.`;
       speechText = speechText || `Turning ${data.command.parameters?.state || 'on'} the ${devName}.`;
 
-      // Set command state: waiting_for_hub
-      this.setState(AssistantState.WAITING_FOR_HUB);
+      // Set command state: dispatched / completed
+      this.setState(AssistantState.COMPLETED, 'Command Dispatched');
       this.appendMessage('Sarah', displayText);
 
-      // Speak initial dispatch confirmation through TTS
+      // Speak confirmation through TTS and return promptly to listening/ready without blocking delay
       this.speakAssistantResponse(speechText, () => {
+        // Return promptly to listening/ready mode so user can speak immediately
+        this.returnToListeningOrReady();
+
+        // Check command outcome asynchronously in background without freezing the assistant
         const cmdId = data.command.command_id;
         if (cmdId) {
-          this.pollCommandOutcome(cmdId, devName);
-        } else {
-          this.setState(AssistantState.COMPLETED);
-          setTimeout(() => {
-            this.returnToListeningOrReady();
-          }, 2200);
+          this.checkCommandOutcomeInBackground(cmdId, devName);
         }
       });
       return;
@@ -546,14 +559,50 @@ class AssistantApp {
    */
   speakAssistantResponse(text, onComplete) {
     if (!text || typeof window.speak !== 'function') {
+      this.isTTSSpeaking = false;
       if (onComplete) onComplete();
       return;
+    }
+
+    if (this.ttsWatchdog) {
+      clearTimeout(this.ttsWatchdog);
+      this.ttsWatchdog = null;
+    }
+    if (this.resumeTimeout) {
+      clearTimeout(this.resumeTimeout);
+      this.resumeTimeout = null;
     }
 
     // 1. Prevent microphone recognition from running while TTS is speaking
     this.pauseMicrophoneRecognition();
     this.isTTSSpeaking = true;
     this.setState(AssistantState.SPEAKING);
+
+    let finished = false;
+    const done = () => {
+      if (finished) return;
+      finished = true;
+      if (this.ttsWatchdog) {
+        clearTimeout(this.ttsWatchdog);
+        this.ttsWatchdog = null;
+      }
+      this.isTTSSpeaking = false;
+      if (onComplete) {
+        onComplete();
+      } else {
+        this.returnToListeningOrReady();
+      }
+    };
+
+    // Watchdog timer: Automatically releases speaking state even if audio stalls or hangs
+    const wordCount = (text || '').trim().split(/\s+/).length;
+    const maxWatchdogMs = Math.max(2200, wordCount * 450 + 1500);
+    this.ttsWatchdog = setTimeout(() => {
+      if (this.isTTSSpeaking) {
+        console.warn(`[AssistantApp] TTS watchdog triggered after ${maxWatchdogMs}ms. Forcing reset.`);
+        done();
+      }
+    }, maxWatchdogMs);
 
     // 2. Play speech through computer speakers via Web Speech TTS
     window.speak(
@@ -565,18 +614,12 @@ class AssistantApp {
       },
       // onEnd callback
       () => {
-        this.isTTSSpeaking = false;
-        // Small delay (250ms) to ensure residual audio playback doesn't trigger mic
-        if (this.resumeTimeout) clearTimeout(this.resumeTimeout);
-        this.resumeTimeout = setTimeout(() => {
-          if (onComplete) onComplete();
-        }, 250);
+        done();
       },
       // onError callback
       (err) => {
         console.warn('TTS playback note:', err);
-        this.isTTSSpeaking = false;
-        if (onComplete) onComplete();
+        done();
       }
     );
   }
@@ -588,48 +631,46 @@ class AssistantApp {
   }
 
   resumeMicrophoneRecognition() {
-    if (this.isTTSSpeaking) return; // Do not resume if still speaking
+    if (this.isTTSSpeaking) {
+      if (window.isSpeaking && !window.isSpeaking()) {
+        this.isTTSSpeaking = false;
+      } else {
+        return; // Do not resume if still actively speaking
+      }
+    }
     if (window.SpeechController && typeof window.SpeechController.resumeRecognition === 'function') {
       window.SpeechController.resumeRecognition();
     }
   }
 
-  async pollCommandOutcome(commandId, deviceName, retries = 5) {
+  async checkCommandOutcomeInBackground(commandId, deviceName) {
     try {
-      const res = await fetch(`/api/commands/${encodeURIComponent(commandId)}?wait=true&timeout=2.0`);
+      // Non-blocking query to check if RN Hub reported an execution error or failure
+      const res = await fetch(`/api/commands/${encodeURIComponent(commandId)}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.state === 'completed') {
-          this.setState(AssistantState.COMPLETED);
-          const outcomeText = data.speech_outcome || `The ${deviceName} has been updated.`;
-          this.appendMessage('Sarah', outcomeText);
-          this.speakAssistantResponse(outcomeText, () => {
-            setTimeout(() => this.returnToListeningOrReady(), 1500);
-          });
-          return;
-        } else if (data.state === 'failed' || data.state === 'rejected') {
-          this.setState(AssistantState.FAILED);
+        if (data.state === 'failed' || data.state === 'rejected') {
           const failText = data.speech_outcome || `Execution failed on ${deviceName}.`;
           this.appendMessage('Sarah', failText, true);
-          this.speakAssistantResponse(failText, () => {
-            setTimeout(() => this.returnToListeningOrReady(), 2000);
-          });
-          return;
+          this.setState(AssistantState.FAILED);
+          setTimeout(() => this.returnToListeningOrReady(), 1500);
         }
       }
     } catch (e) {
-      console.warn('Poll command error:', e);
-    }
-
-    if (retries > 0) {
-      setTimeout(() => this.pollCommandOutcome(commandId, deviceName, retries - 1), 1000);
-    } else {
-      this.setState(AssistantState.COMPLETED);
-      setTimeout(() => this.returnToListeningOrReady(), 1500);
+      console.debug('Background command check error:', e);
     }
   }
 
+  async pollCommandOutcome(commandId, deviceName, retries = 0) {
+    return this.checkCommandOutcomeInBackground(commandId, deviceName);
+  }
+
   returnToListeningOrReady() {
+    this.isTTSSpeaking = false;
+    if (this.ttsWatchdog) {
+      clearTimeout(this.ttsWatchdog);
+      this.ttsWatchdog = null;
+    }
     if (this.wakeToggle && this.wakeToggle.checked) {
       this.setState(AssistantState.LISTENING);
       this.resumeMicrophoneRecognition();

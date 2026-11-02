@@ -5,6 +5,7 @@ dialects, and noisy environments with zero local CPU/RAM compute overhead.
 """
 import io
 import os
+import re
 import logging
 from typing import Union, BinaryIO, Optional, Any
 try:
@@ -151,8 +152,16 @@ class GeminiAudioSTTService:
 
             if response and response.text:
                 clean_text = response.text.strip()
-                # If model returned EMPTY or silence marker
-                if clean_text.upper() in ["EMPTY", "EMPTY.", "[SILENCE]", "NO SPEECH DETECTED"]:
+                # If model returned EMPTY, silence, or acoustic noise markers
+                upper_text = clean_text.upper().strip()
+                noise_markers = {
+                    "EMPTY", "EMPTY.", "[SILENCE]", "(SILENCE)", "<SILENCE>",
+                    "NO SPEECH DETECTED", "NO SPEECH", "[NOISE]", "(NOISE)", "<NOISE>",
+                    "[INAUDIBLE]", "(INAUDIBLE)", "<INAUDIBLE>", "[MUSIC]", "(MUSIC)",
+                    "<MUSIC>", "[APPLAUSE]", "(APPLAUSE)", "<APPLAUSE>", "BLANK_AUDIO",
+                    "[BLANK_AUDIO]", "NONE", "NONE.", "[AMBIENT NOISE]", "<AMBIENT NOISE>"
+                }
+                if upper_text in noise_markers or re.match(r"^[<\[\(](?:noise|silence|inaudible|music|applause|blank)[>\]\)]$", clean_text, re.IGNORECASE):
                     return ""
                 # Strip wrapping quotes if Gemini added any
                 if clean_text.startswith('"') and clean_text.endswith('"') and len(clean_text) > 2:

@@ -31,8 +31,12 @@ document.addEventListener('DOMContentLoaded', () => {
     accentSelect.value = currentAccent;
   }
 
-  // Session ID
-  const sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
+  // Session ID synchronized with App and localStorage
+  const savedSession = localStorage.getItem('sarah_active_session_id');
+  const sessionId = savedSession || ('session_' + Math.random().toString(36).substring(2, 9));
+  if (!savedSession) {
+    try { localStorage.setItem('sarah_active_session_id', sessionId); } catch (e) {}
+  }
   let isListening = false;
   let shouldStayListening = true; // For continuous wake-word mode
   let finalTranscriptReceived = false;
@@ -256,7 +260,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const devName = data.command.device_id === '98a316e6b658' ? 'Testing Farm Lights' : data.command.device_id;
       displayText = data.speech || `Okay, setting ${data.command.action} on '${devName}'${paramStr ? ' (' + paramStr + ')' : ''}.`;
       setAssistantStatus('Executing');
-      setTimeout(() => setAssistantStatus('Ready to listen'), 2500);
+      setTimeout(() => setAssistantStatus('Ready to listen'), 400);
     } else if (data.mode === 'clarify') {
       const missing = data.missing_fields && data.missing_fields.length > 0 
         ? ` (Need: ${data.missing_fields.join(', ')})` 
@@ -290,6 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function sendToFastAPI(userText) {
     setAssistantStatus('Thinking');
     try {
+      const activeSessionId = (window.App && window.App.sessionId) || localStorage.getItem('sarah_active_session_id') || sessionId;
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -298,7 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({
           text: userText,
           message: userText,
-          session_id: sessionId
+          session_id: activeSessionId
         })
       });
 
@@ -320,9 +325,10 @@ document.addEventListener('DOMContentLoaded', () => {
     setAssistantStatus('Thinking');
     transcriptEl.textContent = 'Transcribing with Gemini Audio...';
     try {
+      const activeSessionId = (window.App && window.App.sessionId) || localStorage.getItem('sarah_active_session_id') || sessionId;
       const formData = new FormData();
       formData.append('file', audioBlob, 'recording.webm');
-      formData.append('session_id', sessionId);
+      formData.append('session_id', activeSessionId);
 
       const response = await fetch('/api/chat/audio', {
         method: 'POST',
@@ -334,39 +340,39 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const data = await response.json();
-      const transcribed = data.transcript;
-      if (transcribed) {
-        transcriptEl.textContent = transcribed;
-        const parsed = extractCommandWithWakeWord(transcribed);
+      const transcribed = (data.transcript || '').trim();
 
-        if (!isSarahAwake) {
-          // Asleep mode
-          if (parsed.hasWakeWord) {
-            wakeSarah();
-            appendMessage('User', transcribed);
-            handleFastAPIResponse(data.response);
-          } else {
-            transcriptEl.textContent = `Heard: "${transcribed}" (Sarah is asleep. Greet "Sarah" to wake)`;
-            appendMessage('User', transcribed);
-            appendMessage('Sarah', "I'm in sleep mode. Please say 'Sarah' to wake me up.");
-            if (tts) tts.speak("I'm in sleep mode. Please say Sarah to wake me up.");
-            setAssistantStatus('Ready to listen');
-          }
+      if (transcribed) {
+        // User explicitly spoke into microphone: Sarah is active and silence timer resets
+        wakeSarah();
+        resetSilenceTimer();
+
+        transcriptEl.textContent = transcribed;
+        const clean = transcribed.trim();
+
+        if (['go to sleep', 'sleep', 'turn off', 'power down', 'good night'].includes(clean.toLowerCase())) {
+          sleepSarah(false);
+          appendMessage('User', clean);
+          sendToFastAPI(clean);
         } else {
-          // Awake mode -> any command works and resets silence timer!
-          resetSilenceTimer();
-          const clean = transcribed.toLowerCase().trim();
-          if (['go to sleep', 'sleep', 'turn off', 'power down', 'good night'].includes(clean)) {
-            sleepSarah(false);
-          }
-          appendMessage('User', transcribed);
+          appendMessage('User', clean);
+          handleFastAPIResponse(data.response);
+        }
+      } else {
+        transcriptEl.textContent = "I didn't hear anything clearly. Please speak closer to the microphone.";
+        setAssistantStatus('Ready to listen');
+        if (data.response && data.response.speech) {
           handleFastAPIResponse(data.response);
         }
       }
     } catch (err) {
-      console.error('Faster-Whisper STT Error:', err);
-      appendMessage('Sarah', `Faster-Whisper STT Error: ${err.message}`, true);
+      console.error('STT Transcription Error:', err);
+      appendMessage('Sarah', `STT Error: ${err.message}`, true);
       setAssistantStatus('Ready to listen');
+    } finally {
+      if (wakeToggle && wakeToggle.checked && !isMediaRecording) {
+        resumeRecognition();
+      }
     }
   }
 
@@ -375,7 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const raw = transcript.trim();
     if (!raw) return { hasWakeWord: false, command: '' };
 
-    // 1. Regex check on phonetic spellings
+    // 1. Regex check on phonetic spellings at start of speech
     const match = raw.match(WAKE_REGEX);
     if (match) {
       const remainder = raw.substring(match[0].length).replace(/^[,:;!-]+/, '').trim();
@@ -385,9 +391,10 @@ document.addEventListener('DOMContentLoaded', () => {
       };
     }
 
-    // 2. Soundex check on first word (or second word if prefixed by 'hey' / 'hi')
+    // 2. Soundex and phonetic check across tokens
     const tokens = raw.split(/\s+/);
     if (tokens.length > 0) {
+      // Check first word
       const first = tokens[0].replace(/[^a-zA-Z]/g, '');
       if (isPhoneticSarah(first)) {
         const remainder = tokens.slice(1).join(' ').replace(/^[,:;!-]+/, '').trim();
@@ -396,10 +403,31 @@ document.addEventListener('DOMContentLoaded', () => {
           command: remainder || 'Sarah'
         };
       }
+      // Check prefix + second word (e.g. "hey Sarah")
       if (['hey', 'hi', 'ok', 'okay', 'hello'].includes(first.toLowerCase()) && tokens.length > 1) {
         const second = tokens[1].replace(/[^a-zA-Z]/g, '');
         if (isPhoneticSarah(second)) {
           const remainder = tokens.slice(2).join(' ').replace(/^[,:;!-]+/, '').trim();
+          return {
+            hasWakeWord: true,
+            command: remainder || 'Sarah'
+          };
+        }
+      }
+      // Check last word (e.g. "turn on lights, Sarah")
+      const last = tokens[tokens.length - 1].replace(/[^a-zA-Z]/g, '');
+      if (isPhoneticSarah(last)) {
+        const remainder = tokens.slice(0, -1).join(' ').replace(/[,:;!-]+$/, '').trim();
+        return {
+          hasWakeWord: true,
+          command: remainder || 'Sarah'
+        };
+      }
+      // Check if Sarah was greeted anywhere in speech
+      for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i].replace(/[^a-zA-Z]/g, '');
+        if (isPhoneticSarah(t)) {
+          const remainder = tokens.filter((_, idx) => idx !== i).join(' ').trim();
           return {
             hasWakeWord: true,
             command: remainder || 'Sarah'
@@ -417,15 +445,24 @@ document.addEventListener('DOMContentLoaded', () => {
   function normalizeClientTranscript(text) {
     if (!text) return '';
     let res = text.trim();
-    res = res.replace(/^(?:(?:hey|hi|ok|okay|hello)\s+)?\b(sierra|serrah|sarrah|serra|sarra|sarha|sahra|saira|serah|zarah|syrah|surah|sara|sera|zara|cera|zahra|zera|sayrah|sorah|sura|seira|sora)\b/i, 'Sarah');
+    // Wake word variants
+    res = res.replace(/^(?:(?:hey|hi|ok|okay|hello)\s+)?\b(sarah|sierra|serrah|sarrah|serra|sarra|sarha|sahra|saira|serah|zarah|syrah|surah|sara|sera|zara|cera|ceira|zahra|zera|sayrah|sorah|sura|seira|sora)\b/i, 'Sarah');
+    // Testing farm lights
     res = res.replace(/\btesting\s+(?:farm|fan|form|firm|palm|fram|from|farms)\s+lights?\b/gi, 'testing farm lights');
     res = res.replace(/\b(?:farm|fan|form|firm|palm|fram)\s+lights?\b/gi, 'farm lights');
+    // Other devices
     res = res.replace(/\b(?:room|rum|rome)\s+lights?\b/gi, 'room lights');
     res = res.replace(/\bkitchen\s+(?:lights?|likes?|line)\b/gi, 'kitchen lights');
-    res = res.replace(/\b(?:columbo|columba|calombo|calumba)\b/gi, 'Colombo');
+    res = res.replace(/\bdesk\s+(?:lamp|light|lamb|ramp)\b/gi, 'desk lamp');
+    res = res.replace(/\bglow\s+(?:lights?|likes?|line)\b/gi, 'glow light');
+    // Locations
+    res = res.replace(/\b(?:columbo|columba|calombo|calumba|kolombo|kolomba)\b/gi, 'Colombo');
+    res = res.replace(/\b(?:srilanka|sri\s+lanka|shri\s+lanka)\b/gi, 'Sri Lanka');
+    // Commands
     res = res.replace(/\b(?:tern|tunnel|tune|ten|danone)\s+on\b/gi, 'turn on');
     res = res.replace(/\b(?:tern|tune|turned)\s+off\b/gi, 'turn off');
     res = res.replace(/\bturn\s+of\b/gi, 'turn off');
+    res = res.replace(/\b(?:switch|switched)\s+of\b/gi, 'switch off');
     return res.trim();
   }
 
@@ -612,6 +649,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     try {
+      // Pause Web Speech continuous recognition during active recording to prevent audio capture conflicts
+      if (recognition && isListening) {
+        try { recognition.stop(); } catch (e) {}
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -633,12 +675,17 @@ document.addEventListener('DOMContentLoaded', () => {
           await sendAudioToFasterWhisper(blob);
         } else {
           setAssistantStatus('Ready to listen');
+          if (wakeToggle && wakeToggle.checked) {
+            resumeRecognition();
+          }
         }
       };
       mediaRecorder.start();
       isMediaRecording = true;
+      wakeSarah(); // User explicitly interacted with mic, wake Sarah immediately
       setAssistantStatus('Listening');
-      micHint.textContent = 'Recording with Faster-Whisper... Click mic when finished';
+      micBtn.classList.add('active');
+      micHint.textContent = 'Listening with Gemini Audio... Click mic when finished speaking';
     } catch (err) {
       console.warn('Microphone stream error, fallback to Web Speech:', err);
       startRecognition();
@@ -649,16 +696,28 @@ document.addEventListener('DOMContentLoaded', () => {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
       mediaRecorder.stop();
       isMediaRecording = false;
-      micHint.textContent = 'Transcribing with Faster-Whisper...';
+      micBtn.classList.remove('active');
+      micHint.textContent = 'Transcribing with Gemini Audio...';
     }
   }
 
   // Toggle microphone button click
   micBtn.addEventListener('click', () => {
+    // Immediate barge-in: If assistant is speaking, halt speech and reset state
+    if (window.stopSpeaking) {
+      window.stopSpeaking();
+    }
+    if (window.App) {
+      window.App.isTTSSpeaking = false;
+      if (window.App.ttsWatchdog) {
+        clearTimeout(window.App.ttsWatchdog);
+        window.App.ttsWatchdog = null;
+      }
+    }
+
+    // Explicit user tap on microphone starts/stops audio recording
     if (isMediaRecording) {
       stopAudioRecording();
-    } else if (isListening) {
-      stopRecognition();
     } else {
       startAudioRecording();
     }

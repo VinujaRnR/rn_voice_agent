@@ -38,18 +38,70 @@ const MALE_VOICE_INDICATORS = [
   'speech-dispatcher', 'system', 'default', 'desktop'
 ];
 
-// Instant, crystal-clear static female audio recordings for core system prompts
+// Instant, crystal-clear static female audio recordings for core system prompts and device commands
 const PRE_RENDERED_AUDIO = {
+  // Core System & Wake Prompts
   "hello! i'm sarah. i'm listening, what can i do for you?": '/audio/sarah_greeting.mp3',
   "hello! i'm sarah. i'm listening, what can i do for you": '/audio/sarah_greeting.mp3',
   "hello! i am sarah. i am listening, what can i do for you?": '/audio/sarah_greeting.mp3',
   "5 minutes of silence reached. i am now in sleep mode. greet me with sarah to wake me up.": '/audio/sarah_sleep.mp3',
   "i'm in sleep mode. please say 'sarah' to wake me up.": '/audio/sarah_wake_prompt.mp3',
-  "i'm in sleep mode. please say sarah to wake me up.": '/audio/sarah_wake_prompt.mp3'
+  "i'm in sleep mode. please say sarah to wake me up.": '/audio/sarah_wake_prompt.mp3',
+
+  // Device On/Off Confirmations (Instant Local MP3s)
+  "okay, turning on the room lights.": '/audio/sarah_turn_on_room_lights.mp3',
+  "okay, turning on the room lights": '/audio/sarah_turn_on_room_lights.mp3',
+  "okay, turning off the room lights.": '/audio/sarah_turn_off_room_lights.mp3',
+  "okay, turning off the room lights": '/audio/sarah_turn_off_room_lights.mp3',
+
+  "okay, turning on the kitchen lights.": '/audio/sarah_turn_on_kitchen_lights.mp3',
+  "okay, turning on the kitchen lights": '/audio/sarah_turn_on_kitchen_lights.mp3',
+  "okay, turning off the kitchen lights.": '/audio/sarah_turn_off_kitchen_lights.mp3',
+  "okay, turning off the kitchen lights": '/audio/sarah_turn_off_kitchen_lights.mp3',
+
+  "okay, turning on the desk lamp.": '/audio/sarah_turn_on_desk_lamp.mp3',
+  "okay, turning on the desk lamp": '/audio/sarah_turn_on_desk_lamp.mp3',
+  "okay, turning off the desk lamp.": '/audio/sarah_turn_off_desk_lamp.mp3',
+  "okay, turning off the desk lamp": '/audio/sarah_turn_off_desk_lamp.mp3',
+
+  "okay, turning on the lights.": '/audio/sarah_turn_on_lights.mp3',
+  "okay, turning on the lights": '/audio/sarah_turn_on_lights.mp3',
+  "okay, turning off the lights.": '/audio/sarah_turn_off_lights.mp3',
+  "okay, turning off the lights": '/audio/sarah_turn_off_lights.mp3',
+
+  "okay, turning on light 1.": '/audio/sarah_turn_on_light_1.mp3',
+  "okay, turning on light 1": '/audio/sarah_turn_on_light_1.mp3',
+  "okay, turning off light 1.": '/audio/sarah_turn_off_light_1.mp3',
+  "okay, turning off light 1": '/audio/sarah_turn_off_light_1.mp3',
+
+  "okay, turning on the farm lights.": '/audio/sarah_turn_on_farm_lights.mp3',
+  "okay, turning on the farm lights": '/audio/sarah_turn_on_farm_lights.mp3',
+  "okay, turning off the farm lights.": '/audio/sarah_turn_off_farm_lights.mp3',
+  "okay, turning off the farm lights": '/audio/sarah_turn_off_farm_lights.mp3',
+
+  "okay, turning on the testing farm lights.": '/audio/sarah_turn_on_testing_farm_lights.mp3',
+  "okay, turning on the testing farm lights": '/audio/sarah_turn_on_testing_farm_lights.mp3',
+  "okay, turning off the testing farm lights.": '/audio/sarah_turn_off_testing_farm_lights.mp3',
+  "okay, turning off the testing farm lights": '/audio/sarah_turn_off_testing_farm_lights.mp3',
+
+  "sending the command to rn hub.": '/audio/sarah_sending_to_rn_hub.mp3',
+  "sending the command to rn hub": '/audio/sarah_sending_to_rn_hub.mp3',
+
+  "okay.": '/audio/sarah_okay.mp3',
+  "okay": '/audio/sarah_okay.mp3'
 };
 
 let cachedVoices = [];
 let currentAudio = null;
+let currentWatchdog = null;
+let isSpeechActive = false;
+
+function clearWatchdog() {
+  if (currentWatchdog) {
+    clearTimeout(currentWatchdog);
+    currentWatchdog = null;
+  }
+}
 
 function loadVoices() {
   if (typeof window !== 'undefined' && window.speechSynthesis) {
@@ -142,24 +194,46 @@ function speakWebSpeechFallback(text, onStart, onEnd, onError) {
   }
 
   const utterance = new SpeechSynthesisUtterance(text.trim());
+  // Retain utterance on window to prevent Chromium garbage-collection dropping onend event
+  window._currentUtterance = utterance;
   utterance.voice = femaleVoice;
   utterance.pitch = 1.1;
   utterance.rate = 1.0;
   utterance.volume = 1.0;
 
   utterance.onstart = () => {
+    isSpeechActive = true;
     if (onStart) onStart();
   };
 
   utterance.onend = () => {
+    window._currentUtterance = null;
+    isSpeechActive = false;
+    clearWatchdog();
     if (onEnd) onEnd();
   };
 
   utterance.onerror = (e) => {
     console.warn("[TTS] Web Speech fallback error:", e);
+    window._currentUtterance = null;
+    isSpeechActive = false;
+    clearWatchdog();
     if (onError) onError(e);
     if (onEnd) onEnd();
   };
+
+  // 4-second safety watchdog for fallback speech
+  clearWatchdog();
+  const words = text.trim().split(/\s+/).length;
+  currentWatchdog = setTimeout(() => {
+    if (window._currentUtterance === utterance) {
+      console.warn("[TTS] Web Speech fallback watchdog triggered, forcing release");
+      window._currentUtterance = null;
+      isSpeechActive = false;
+      try { synth.cancel(); } catch (e) {}
+      if (onEnd) onEnd();
+    }
+  }, Math.max(3000, words * 450 + 1500));
 
   synth.speak(utterance);
 }
@@ -177,25 +251,55 @@ function speak(text, onStart, onEnd, onError) {
 
   const cleanText = text.trim();
   const normalizedKey = cleanText.toLowerCase().replace(/['"’]/g, "'");
+  const strippedKey = normalizedKey.replace(/[.!?]+$/, '').trim();
+
+  isSpeechActive = true;
+
+  let finished = false;
+  const safeEnd = () => {
+    if (finished) return;
+    finished = true;
+    clearWatchdog();
+    isSpeechActive = false;
+    currentAudio = null;
+    window._currentUtterance = null;
+    if (onEnd) onEnd();
+  };
+
+  const safeStart = () => {
+    isSpeechActive = true;
+    if (onStart) onStart();
+  };
 
   // Tier 1: Instant Pre-Rendered High-Definition Female Audio
-  const staticAudioUrl = PRE_RENDERED_AUDIO[normalizedKey];
+  let staticAudioUrl = PRE_RENDERED_AUDIO[normalizedKey] || PRE_RENDERED_AUDIO[strippedKey];
+  if (!staticAudioUrl) {
+    const match = Object.keys(PRE_RENDERED_AUDIO).find(k => k === strippedKey || k.replace(/[.!?]+$/, '') === strippedKey);
+    if (match) staticAudioUrl = PRE_RENDERED_AUDIO[match];
+  }
+
   if (staticAudioUrl) {
     try {
       const audio = new Audio(staticAudioUrl);
       currentAudio = audio;
 
+      // Watchdog timer: on/off and core confirmation static audios are <= 2s
+      currentWatchdog = setTimeout(() => {
+        console.warn("[TTS] Pre-rendered audio watchdog reached, releasing lock");
+        safeEnd();
+      }, 2500);
+
       audio.onplay = () => {
-        if (onStart) onStart();
+        safeStart();
       };
 
       audio.onended = () => {
-        currentAudio = null;
-        if (onEnd) onEnd();
+        safeEnd();
       };
 
       audio.onerror = (err) => {
         console.warn("[TTS] Static audio error, falling back:", err);
+        clearWatchdog();
         currentAudio = null;
         speakWebSpeechFallback(cleanText, onStart, onEnd, onError);
       };
@@ -204,6 +308,7 @@ function speak(text, onStart, onEnd, onError) {
       if (playPromise !== undefined) {
         playPromise.catch(err => {
           console.warn("[TTS] Static audio autoplay restricted, falling back:", err);
+          clearWatchdog();
           currentAudio = null;
           speakWebSpeechFallback(cleanText, onStart, onEnd, onError);
         });
@@ -211,6 +316,8 @@ function speak(text, onStart, onEnd, onError) {
       return;
     } catch (err) {
       console.error("[TTS] Static audio exception:", err);
+      clearWatchdog();
+      currentAudio = null;
     }
   }
 
@@ -221,17 +328,24 @@ function speak(text, onStart, onEnd, onError) {
     const audio = new Audio(url);
     currentAudio = audio;
 
+    const words = cleanText.split(/\s+/).length;
+    const maxWaitMs = Math.max(3500, words * 450 + 2000);
+    currentWatchdog = setTimeout(() => {
+      console.warn(`[TTS] Neural TTS watchdog reached after ${maxWaitMs}ms, releasing lock`);
+      safeEnd();
+    }, maxWaitMs);
+
     audio.onplay = () => {
-      if (onStart) onStart();
+      safeStart();
     };
 
     audio.onended = () => {
-      currentAudio = null;
-      if (onEnd) onEnd();
+      safeEnd();
     };
 
     audio.onerror = (err) => {
       console.warn("[TTS] Neural TTS audio error, falling back to Web Speech:", err);
+      clearWatchdog();
       currentAudio = null;
       speakWebSpeechFallback(cleanText, onStart, onEnd, onError);
     };
@@ -240,17 +354,21 @@ function speak(text, onStart, onEnd, onError) {
     if (playPromise !== undefined) {
       playPromise.catch(err => {
         console.warn("[TTS] Audio playback restricted, falling back:", err);
+        clearWatchdog();
         currentAudio = null;
         speakWebSpeechFallback(cleanText, onStart, onEnd, onError);
       });
     }
   } catch (err) {
     console.error("[TTS] Audio creation exception:", err);
+    clearWatchdog();
     speakWebSpeechFallback(cleanText, onStart, onEnd, onError);
   }
 }
 
 function stopSpeaking() {
+  clearWatchdog();
+  isSpeechActive = false;
   if (currentAudio) {
     try {
       currentAudio.pause();
@@ -259,15 +377,18 @@ function stopSpeaking() {
     currentAudio = null;
   }
   const synth = window.speechSynthesis;
-  if (synth && synth.speaking) {
-    synth.cancel();
+  if (synth) {
+    try {
+      synth.cancel();
+    } catch (e) {}
   }
+  window._currentUtterance = null;
 }
 
 function isSpeaking() {
   const audioPlaying = Boolean(currentAudio && !currentAudio.paused && !currentAudio.ended);
-  const synthSpeaking = Boolean(window.speechSynthesis && window.speechSynthesis.speaking);
-  return audioPlaying || synthSpeaking;
+  const synthSpeaking = Boolean(window.speechSynthesis && window.speechSynthesis.speaking && window._currentUtterance);
+  return Boolean(isSpeechActive || audioPlaying || synthSpeaking);
 }
 
 // Window exports
