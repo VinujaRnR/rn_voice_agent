@@ -158,7 +158,7 @@ def control_device(
         "target_hub": "RN_HUB_MAIN"
     }
 
-    # 4. Dispatch the command JSON to RabbitMQ topic exchange across all matching topics
+    # 4. Dispatch the command JSON to RabbitMQ topic exchange using the primary inbound routing key
     sub_id = command_dict.get("device_id") if command_dict.get("device_id") != target_id else None
     topics = get_device_topics(target_id, sub_device_id=sub_id)
     try:
@@ -166,12 +166,13 @@ def control_device(
         from app.config import settings
         from app.rabbitmq.publisher import publisher
         loop = asyncio.get_running_loop()
-        target_queue = settings.rabbitmq_command_queue or "commands"
+        target_queue = settings.rabbitmq_command_queue or "iot_exchange"
+        primary_routing_key = settings.rabbitmq_command_routing_key or "iot.command"
         loop.create_task(publisher.publish(
                 queue_name=target_queue,
                 message=command_dict,
                 exchange_name=settings.rabbitmq_command_exchange,
-                routing_keys=topics,
+                routing_key=primary_routing_key,
                 reply_to=settings.rabbitmq_result_queue,
                 correlation_id=command_id
             ))
