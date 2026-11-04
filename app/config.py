@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 from urllib.parse import quote
 from pydantic import model_validator
@@ -79,8 +80,8 @@ class Settings(BaseSettings):
     # ==========================================
     # Gemini Live & Zara Voice Configuration
     # ==========================================
-    gemini_live_model: str = "gemini-3.5-flash-live-preview"
-    gemini_live_fallback_model: str = "gemini-2.5-flash-native-audio-latest"
+    gemini_live_model: str = "gemini-2.5-flash-native-audio-latest"
+    gemini_live_fallback_model: str = "gemini-3.1-flash-live-preview"
     gemini_live_voice: str = "Aoede"
     gemini_live_input_sample_rate: int = 16000
     gemini_live_output_sample_rate: int = 24000
@@ -143,3 +144,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Ensure Google GenAI / Google ADK find the Gemini API key in process environment
+if settings.gemini_api_key:
+    os.environ["GEMINI_API_KEY"] = settings.gemini_api_key
+    os.environ["GOOGLE_API_KEY"] = settings.gemini_api_key
+

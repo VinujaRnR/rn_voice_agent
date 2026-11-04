@@ -138,8 +138,31 @@ class ApiService {
 
     // Authenticated Profile & Me
     async getCurrentUser() {
-        const token = this.getToken();
-        if (!token) return null;
+        let token = this.getToken();
+        if (!token) {
+            try {
+                // Auto-fetch active default resident from MySQL so dashboard is instantly connected
+                const res = await fetch('/api/v1/auth/default-resident');
+                if (res.ok) {
+                    const defData = await res.json();
+                    if (defData.access_token) {
+                        this.setToken(defData.access_token, defData);
+                        if (defData.household_name) localStorage.setItem('sarah_household_name', defData.household_name);
+                        return {
+                            user_id: defData.user_id,
+                            email: defData.email,
+                            full_name: defData.full_name,
+                            role: defData.role,
+                            household_id: defData.household_id,
+                            households: defData.household_id ? [{ id: defData.household_id, name: defData.household_name || 'Colombo' }] : []
+                        };
+                    }
+                }
+            } catch (err) {
+                console.debug('Could not load default resident:', err);
+            }
+            return null;
+        }
         try {
             const data = await this.request('/api/v1/auth/me');
             if (data) {
@@ -150,10 +173,33 @@ class ApiService {
                 }
                 if (data.household_id) localStorage.setItem(this.householdKey, data.household_id);
                 if (data.full_name) localStorage.setItem(this.userNameKey, data.full_name);
+                if (data.households && data.households.length > 0) {
+                    localStorage.setItem('sarah_household_name', data.households[0].name);
+                }
             }
             return data;
         } catch (e) {
             console.warn('Could not fetch current user profile:', e);
+            try {
+                const res = await fetch('/api/v1/auth/default-resident');
+                if (res.ok) {
+                    const defData = await res.json();
+                    if (defData.access_token) {
+                        this.setToken(defData.access_token, defData);
+                        if (defData.household_name) localStorage.setItem('sarah_household_name', defData.household_name);
+                        return {
+                            user_id: defData.user_id,
+                            email: defData.email,
+                            full_name: defData.full_name,
+                            role: defData.role,
+                            household_id: defData.household_id,
+                            households: defData.household_id ? [{ id: defData.household_id, name: defData.household_name || 'Colombo' }] : []
+                        };
+                    }
+                }
+            } catch (recoveryErr) {
+                console.debug('Recovery failed:', recoveryErr);
+            }
             return null;
         }
     }

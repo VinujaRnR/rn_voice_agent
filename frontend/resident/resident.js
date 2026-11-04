@@ -2,10 +2,12 @@
  * Sarah Resident Dashboard Controller
  * Integrates:
  * 1. Sarah Woman Talking Animated Avatar with Live Lip-Sync
- * 2. Live Gemini Live BIDI Voice AI (Aoede prebuilt voice, 16kHz raw PCM in, 24kHz out)
+ * 2. Unified Voice Engine: Web Speech STT (regional accents, phonetic "Sarah" wake word)
+ *    and Google ADK Live BIDI Audio (Aoede voice, 16kHz raw PCM in, 24kHz out)
  * 3. Dynamic MySQL Database Synchronization (User, Household, Devices, Medications, Reminders)
- * 4. Real-time dual live transcriptions and barge-in / emergency handling
- * 5. Quick Touch Controls buttons removed
+ * 4. Music and Audio Playback (Elderly relaxation music, ambient audio)
+ * 5. Emergency alerts, device controls, and real-time status updates
+ * 6. Quick Touch Controls buttons removed
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -78,7 +80,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         <span class="item-sub">${dev.location || 'Home'} • ID: <code>${dev.device_id || dev.id}</code></span>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span class="status-pill ${isOnline ? 'pill-green' : 'pill-amber'}">
+                        <span class="status-pill ${isOnline ? (powerState === 'on' ? 'pill-green' : 'pill-amber') : 'pill-amber'}">
                             ${isOnline ? (powerState === 'on' ? 'Active On' : 'Standby') : 'Offline'}
                         </span>
                         ${dev.type !== 'radar' ? `
@@ -212,7 +214,468 @@ document.addEventListener('DOMContentLoaded', async () => {
         convContainer.scrollTop = convContainer.scrollHeight;
     }
 
-    // 7. Sarah Live Gemini BIDI Voice AI Audio Engine
+    const btnClearConv = document.getElementById('btn-clear-conv');
+    if (btnClearConv) {
+        btnClearConv.addEventListener('click', () => {
+            if (convContainer) convContainer.innerHTML = '';
+        });
+    }
+
+    // 7. Music Streaming & Elderly Care Entertainment Engine
+    const musicBar = document.getElementById('sarah-music-bar');
+    const musicTitle = document.getElementById('music-title');
+    const musicStatus = document.getElementById('music-status');
+    const musicPlayBtn = document.getElementById('music-play-btn');
+    const musicStopBtn = document.getElementById('music-stop-btn');
+    const musicPlayer = document.getElementById('sarah-audio-player');
+
+    function handleMusicPlayback(music) {
+        if (!music || !musicPlayer) return;
+        const action = music.action || 'play';
+        const track = music.track || "Can't Help Falling in Love by Elvis Presley";
+        const mediaUrl = music.media_url || '/audio/relaxing_music.wav';
+
+        if (musicTitle) musicTitle.textContent = track;
+
+        if (action === 'play') {
+            musicPlayer.src = mediaUrl;
+            musicPlayer.play().catch(e => console.warn('Music play rejected:', e));
+            if (musicBar) musicBar.style.display = 'flex';
+            if (musicStatus) musicStatus.textContent = 'Playing • Relaxing Audio';
+            if (musicPlayBtn) musicPlayBtn.textContent = '⏸️ Pause';
+        } else if (action === 'pause') {
+            musicPlayer.pause();
+            if (musicStatus) musicStatus.textContent = 'Paused';
+            if (musicPlayBtn) musicPlayBtn.textContent = '▶️ Resume';
+        } else if (action === 'stop') {
+            musicPlayer.pause();
+            musicPlayer.currentTime = 0;
+            if (musicBar) musicBar.style.display = 'none';
+        }
+    }
+
+    if (musicPlayBtn) {
+        musicPlayBtn.addEventListener('click', () => {
+            if (!musicPlayer) return;
+            if (musicPlayer.paused) {
+                musicPlayer.play().catch(() => {});
+                musicPlayBtn.textContent = '⏸️ Pause';
+                if (musicStatus) musicStatus.textContent = 'Playing • Relaxing Audio';
+            } else {
+                musicPlayer.pause();
+                musicPlayBtn.textContent = '▶️ Resume';
+                if (musicStatus) musicStatus.textContent = 'Paused';
+            }
+        });
+    }
+
+    if (musicStopBtn) {
+        musicStopBtn.addEventListener('click', () => {
+            if (musicPlayer) {
+                musicPlayer.pause();
+                musicPlayer.currentTime = 0;
+            }
+            if (musicBar) musicBar.style.display = 'none';
+        });
+    }
+
+    // 8. Wake-Word Detection & 5-Minute Inactivity State Machine
+    let isSarahAwake = false;
+    let remainingSilenceSeconds = 0;
+    let silenceInterval = null;
+
+    const wakeBadge = document.getElementById('wake-badge');
+    const wakeIcon = document.getElementById('wake-icon');
+    const wakeLabel = document.getElementById('wake-label');
+    const wakeTimerPill = document.getElementById('wake-timer-pill');
+    const accentSelect = document.getElementById('accent-select');
+
+    let currentAccent = localStorage.getItem('sarah_accent') || 'en-LK';
+    if (accentSelect) {
+        accentSelect.value = currentAccent;
+        accentSelect.addEventListener('change', (e) => {
+            currentAccent = e.target.value;
+            localStorage.setItem('sarah_accent', currentAccent);
+            if (recognition) {
+                recognition.lang = currentAccent;
+            }
+        });
+    }
+
+    function formatTime(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    function wakeSarah() {
+        isSarahAwake = true;
+        remainingSilenceSeconds = 300;
+        if (wakeBadge) wakeBadge.className = 'wake-word-badge awake';
+        if (wakeIcon) wakeIcon.textContent = '⚡';
+        if (wakeLabel) wakeLabel.innerHTML = 'Active: <strong>Sarah</strong>';
+        if (wakeTimerPill) {
+            wakeTimerPill.style.display = 'inline-block';
+            wakeTimerPill.textContent = '5:00';
+        }
+
+        if (silenceInterval) clearInterval(silenceInterval);
+        silenceInterval = setInterval(() => {
+            remainingSilenceSeconds--;
+            if (wakeTimerPill) wakeTimerPill.textContent = formatTime(remainingSilenceSeconds);
+            if (remainingSilenceSeconds <= 0) {
+                sleepSarah(true);
+            }
+        }, 1000);
+    }
+
+    function resetSilenceTimer() {
+        if (isSarahAwake) {
+            remainingSilenceSeconds = 300;
+            if (wakeTimerPill) wakeTimerPill.textContent = '5:00';
+        }
+    }
+
+    function sleepSarah(announce = false) {
+        isSarahAwake = false;
+        remainingSilenceSeconds = 0;
+        if (silenceInterval) {
+            clearInterval(silenceInterval);
+            silenceInterval = null;
+        }
+        if (wakeBadge) wakeBadge.className = 'wake-word-badge asleep';
+        if (wakeIcon) wakeIcon.textContent = '💤';
+        if (wakeLabel) wakeLabel.innerHTML = 'Standby: Greet <strong>"Sarah"</strong>';
+        if (wakeTimerPill) wakeTimerPill.style.display = 'none';
+
+        if (announce) {
+            appendConversationMsg('Sarah', '5 minutes of silence reached. Sarah has gone to standby. Greet me with "Sarah" to wake me up.');
+            speakAssistantResponse('5 minutes of silence reached. I am now in standby mode. Greet me with Sarah to wake me up.');
+        }
+    }
+
+    if (wakeBadge) {
+        wakeBadge.addEventListener('click', () => {
+            if (isSarahAwake) {
+                sleepSarah(false);
+            } else {
+                wakeSarah();
+                const greeting = "Hello! I'm Sarah. I'm listening, what can I do for you?";
+                appendConversationMsg('Sarah', greeting);
+                speakAssistantResponse(greeting);
+            }
+        });
+    }
+
+    // Soundex phonetic helper for "Sarah"
+    function computeSoundex(word) {
+        const clean = word.replace(/[^A-Za-z]/g, '').toUpperCase();
+        if (!clean) return '';
+        const mapping = {
+            'B': '1', 'F': '1', 'P': '1', 'V': '1',
+            'C': '2', 'G': '2', 'J': '2', 'K': '2', 'Q': '2', 'S': '2', 'X': '2', 'Z': '2',
+            'D': '3', 'T': '3',
+            'L': '4',
+            'M': '5', 'N': '5',
+            'R': '6'
+        };
+        let res = clean[0];
+        let prev = mapping[clean[0]] || '';
+        for (let i = 1; i < clean.length; i++) {
+            const code = mapping[clean[i]] || '';
+            if (code && code !== prev) {
+                res += code;
+                prev = code;
+            } else if (!code) {
+                prev = '';
+            }
+        }
+        return (res + '000').substring(0, 4);
+    }
+
+    function isPhoneticSarah(word) {
+        const clean = word.replace(/[^a-zA-Z]/g, '').toLowerCase();
+        if (!clean || clean.length < 3 || clean.length > 7) return false;
+        const normalized = clean.startsWith('ce') || clean.startsWith('ci') || clean.startsWith('cy')
+            ? 's' + clean.slice(1)
+            : clean;
+        const code = computeSoundex(normalized);
+        return code === 'S600' || code === 'Z600';
+    }
+
+    const WAKE_REGEX = /^(?:(?:hey|hi|ok|okay|hello)\s+)?(?:sierra|serrah|sarrah|serra|sarra|sarha|sahra|saira|serah|zarah|syrah|surah|sarah|sara|sera|zara|cera|ceira|zahra|zera|sayrah|sorah|sura|seira|sora)(?:\b|[\s,:;!?-])\s*/i;
+
+    // 9. Female Voice Synthesis & Animated Mouth Lip-Sync
+    const tts = window.TTSHandler ? new window.TTSHandler() : null;
+    let ttsAudioEl = null;
+
+    function speakAssistantResponse(text, onEnded = null) {
+        if (!text) return;
+        avatar.setState('speaking', text);
+
+        // Pre-rendered instant static audio match
+        const lower = text.trim().toLowerCase();
+        const staticMap = {
+            "hello! i'm sarah. i'm listening, what can i do for you?": '/audio/sarah_greeting.mp3',
+            "hello! i'm sarah. i'm listening, what can i do for you": '/audio/sarah_greeting.mp3',
+            "okay, turning on the room lights.": '/audio/sarah_turn_on_room_lights.mp3',
+            "okay, turning off the room lights.": '/audio/sarah_turn_off_room_lights.mp3',
+            "okay, turning on the kitchen lights.": '/audio/sarah_turn_on_kitchen_lights.mp3',
+            "okay, turning off the kitchen lights.": '/audio/sarah_turn_off_kitchen_lights.mp3',
+            "okay, turning on the desk lamp.": '/audio/sarah_turn_on_desk_lamp.mp3',
+            "okay, turning off the desk lamp.": '/audio/sarah_turn_off_desk_lamp.mp3',
+            "okay, turning on the lights.": '/audio/sarah_turn_on_lights.mp3',
+            "okay, turning off the lights.": '/audio/sarah_turn_off_lights.mp3',
+            "okay, turning on light 1.": '/audio/sarah_turn_on_light_1.mp3',
+            "okay, turning off light 1.": '/audio/sarah_turn_off_light_1.mp3',
+            "okay, turning on the testing farm lights.": '/audio/sarah_turn_on_testing_farm_lights.mp3',
+            "okay, turning off the testing farm lights.": '/audio/sarah_turn_off_testing_farm_lights.mp3',
+            "sending the command to rn hub.": '/audio/sarah_sending_to_rn_hub.mp3',
+            "okay.": '/audio/sarah_okay.mp3'
+        };
+
+        const staticUrl = staticMap[lower];
+
+        if (staticUrl) {
+            playAudioWithLipSync(staticUrl, onEnded);
+        } else if (tts) {
+            tts.speak(
+                text,
+                () => {
+                    avatar.setState('speaking', text);
+                    // Approximate lip movement
+                    const iv = setInterval(() => {
+                        if (avatar.state === 'speaking') {
+                            avatar.setAudioVolume(0.3 + Math.random() * 0.5);
+                        } else {
+                            clearInterval(iv);
+                        }
+                    }, 120);
+                },
+                () => {
+                    avatar.setAudioVolume(0.0);
+                    avatar.setState('idle', "Ready when you are.");
+                    if (onEnded) onEnded();
+                }
+            );
+        } else {
+            playAudioWithLipSync(`/api/tts?text=${encodeURIComponent(text)}`, onEnded);
+        }
+    }
+
+    function playAudioWithLipSync(audioUrl, onEnded) {
+        if (ttsAudioEl) {
+            ttsAudioEl.pause();
+            ttsAudioEl = null;
+        }
+        ttsAudioEl = new Audio(audioUrl);
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        let actx = null;
+        let analyser = null;
+
+        try {
+            actx = new AudioCtx();
+            const src = actx.createMediaElementSource(ttsAudioEl);
+            analyser = actx.createAnalyser();
+            analyser.fftSize = 256;
+            src.connect(analyser);
+            analyser.connect(actx.destination);
+        } catch (e) {
+            // Audio context permission or CORS fallback
+        }
+
+        let animHandle = null;
+        function updateMouth() {
+            if (analyser) {
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                const avg = sum / dataArray.length;
+                avatar.setAudioVolume(Math.min(1.0, avg / 60));
+            } else {
+                avatar.setAudioVolume(0.3 + Math.random() * 0.4);
+            }
+            if (!ttsAudioEl.paused && !ttsAudioEl.ended) {
+                animHandle = requestAnimationFrame(updateMouth);
+            }
+        }
+
+        ttsAudioEl.onplay = () => {
+            avatar.setState('speaking');
+            animHandle = requestAnimationFrame(updateMouth);
+        };
+
+        ttsAudioEl.onended = () => {
+            if (animHandle) cancelAnimationFrame(animHandle);
+            avatar.setAudioVolume(0.0);
+            avatar.setState('idle', "Ready when you are.");
+            if (actx && actx.state !== 'closed') actx.close().catch(() => {});
+            if (onEnded) onEnded();
+        };
+
+        ttsAudioEl.onerror = () => {
+            if (animHandle) cancelAnimationFrame(animHandle);
+            avatar.setAudioVolume(0.0);
+            avatar.setState('idle', "Ready when you are.");
+            if (actx && actx.state !== 'closed') actx.close().catch(() => {});
+            if (onEnded) onEnded();
+        };
+
+        ttsAudioEl.play().catch(e => {
+            console.warn('Audio play prevented:', e);
+            avatar.setState('idle');
+            if (onEnded) onEnded();
+        });
+    }
+
+    // 10. Voice Engine Toggle: Standard Sarah AI vs Google ADK Live BIDI
+    let engineMode = 'standard'; // 'standard' | 'live_adk'
+    const engineModeBtn = document.getElementById('engine-mode-btn');
+
+    if (engineModeBtn) {
+        engineModeBtn.addEventListener('click', () => {
+            if (engineMode === 'standard') {
+                engineMode = 'live_adk';
+                engineModeBtn.textContent = '⚡ Engine: Google ADK Live BIDI (Aoede)';
+                engineModeBtn.style.background = '#dbeafe';
+                engineModeBtn.style.color = '#1d4ed8';
+                appendConversationMsg('Sarah', "Switched to Google ADK Live BIDI Mode with Gemini Aoede voice.");
+            } else {
+                engineMode = 'standard';
+                engineModeBtn.textContent = '🎙️ Engine: Sarah Voice AI (Active)';
+                engineModeBtn.style.background = 'var(--primary-light)';
+                engineModeBtn.style.color = 'var(--primary-dark)';
+                if (isLiveActive) stopLiveSession();
+                appendConversationMsg('Sarah', "Switched to Standard Sarah Voice AI Mode with Web Speech & tools.");
+            }
+        });
+    }
+
+    // 11. Web Speech STT Engine (First Iteration Parity)
+    let recognition = null;
+    let isRecognizing = false;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = currentAccent;
+
+        recognition.onstart = () => {
+            isRecognizing = true;
+            setVoiceState('listening', 'Listening...');
+            voiceBtnIcon.textContent = '⏹️';
+            voiceBtnText.textContent = 'Stop Listening';
+            btnToggleVoice.classList.remove('btn-primary');
+            btnToggleVoice.classList.add('btn-danger');
+        };
+
+        recognition.onresult = async (event) => {
+            let interimTranscript = '';
+            let finalTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    finalTranscript += transcript;
+                } else {
+                    interimTranscript += transcript;
+                }
+            }
+
+            if (interimTranscript) {
+                avatar.setState('listening', `"${interimTranscript}"`);
+            }
+
+            if (finalTranscript.trim()) {
+                const userText = finalTranscript.trim();
+                console.log('Recognized speech:', userText);
+
+                // Wake word evaluation
+                const hasWakeWord = WAKE_REGEX.test(userText) || userText.split(/\s+/).some(isPhoneticSarah);
+
+                if (hasWakeWord) {
+                    wakeSarah();
+                    resetSilenceTimer();
+                    const cleanedQuery = userText.replace(WAKE_REGEX, '').trim();
+
+                    if (!cleanedQuery || cleanedQuery.length < 2) {
+                        const greeting = "Hello! I'm Sarah. I'm listening, what can I do for you?";
+                        appendConversationMsg('Sarah', greeting);
+                        speakAssistantResponse(greeting);
+                        return;
+                    }
+                    await processUserVoiceQuery(cleanedQuery);
+                } else if (isSarahAwake) {
+                    resetSilenceTimer();
+                    await processUserVoiceQuery(userText);
+                } else {
+                    // Not awake yet: prompt user
+                    avatar.setState('idle', 'Say "Sarah" or click Talk to start.');
+                }
+            }
+        };
+
+        recognition.onerror = (e) => {
+            console.debug('Speech recognition error:', e.error);
+            if (e.error === 'not-allowed') {
+                setVoiceState('error', 'Mic Blocked');
+            }
+        };
+
+        recognition.onend = () => {
+            isRecognizing = false;
+            if (engineMode === 'standard' && isSarahAwake) {
+                try { recognition.start(); } catch (e) {}
+            } else {
+                setVoiceState('standby', 'Ready to listen');
+                voiceBtnIcon.textContent = '🎙️';
+                voiceBtnText.textContent = 'Talk to Sarah';
+                btnToggleVoice.classList.remove('btn-danger');
+                btnToggleVoice.classList.add('btn-primary');
+            }
+        };
+    }
+
+    async function processUserVoiceQuery(queryText) {
+        appendConversationMsg(displayName || 'Resident', queryText);
+        avatar.setState('thinking', `"${queryText}"`);
+        setVoiceState('thinking', 'Processing...');
+
+        try {
+            const res = await api.sendChat(queryText);
+            const reply = res.speech || "I received your request.";
+            appendConversationMsg('Sarah', reply);
+
+            // Handle device command
+            if (res.command) {
+                await loadHouseholdDevices();
+            }
+
+            // Handle reminder
+            if (res.reminder) {
+                await loadScheduleAndMedications();
+            }
+
+            // Handle music
+            if (res.music) {
+                handleMusicPlayback(res.music);
+            }
+
+            speakAssistantResponse(reply, () => {
+                setVoiceState('standby', 'Ready to listen');
+            });
+        } catch (err) {
+            console.error('Chat error:', err);
+            const errMsg = "I had a moment connecting, but I'm here to help.";
+            appendConversationMsg('Sarah', errMsg);
+            speakAssistantResponse(errMsg);
+        }
+    }
+
+    // 12. Google ADK Live BIDI Voice AI Engine (WebSocket Raw PCM)
     let liveSocket = null;
     let isLiveActive = false;
     let inputAudioCtx = null;
@@ -242,14 +705,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     async function startLiveSession() {
         try {
             setVoiceState('connecting', 'Authenticating JWT Ticket...');
-            avatar.setState('thinking', "Connecting to Sarah Voice AI...");
+            avatar.setState('thinking', "Connecting to Sarah Live Voice AI...");
 
-            // A. Acquire signed WebSocket ticket
             const ticketRes = await api.acquireWsTicket();
             const ticket = ticketRes.ticket;
             const endpoint = ticketRes.ws_endpoint || '/api/v1/sarah-live/ws';
 
-            // B. Establish WebSocket
             const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${proto}//${window.location.host}${endpoint}?ticket=${encodeURIComponent(ticket)}`;
 
@@ -265,9 +726,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 setVoiceState('connected', 'Live Connected (Aoede)');
                 avatar.setState('idle', "I'm listening! Speak naturally to me.");
 
-                // Start 16kHz microphone stream
                 await initMicrophoneCapture();
-                // Start 24kHz audio playback engine
                 initAudioPlaybackEngine();
             };
 
@@ -280,7 +739,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                         console.debug('Raw string ws message:', event.data);
                     }
                 } else if (event.data instanceof ArrayBuffer) {
-                    // Incoming 24kHz Raw PCM 16-bit audio chunk from Gemini Aoede voice
                     playAudioChunk24kHz(event.data);
                 }
             };
@@ -296,9 +754,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         } catch (err) {
             console.error('Failed to start Sarah Live session:', err);
-            avatar.setState('idle', "Could not open real-time voice channel. You can type to Sarah below.");
-            setVoiceState('error', 'Connection Failed');
-            stopLiveSession();
+            // Fallback to Standard Voice
+            engineMode = 'standard';
+            if (engineModeBtn) engineModeBtn.textContent = '🎙️ Engine: Sarah Voice AI (Active)';
+            avatar.setState('idle', "Connecting via Standard Voice AI.");
+            toggleVoice();
         }
     }
 
@@ -309,7 +769,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         liveSocket = null;
 
-        // Clean up microphone
         if (scriptNode) {
             scriptNode.disconnect();
             scriptNode = null;
@@ -323,7 +782,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             inputAudioCtx = null;
         }
 
-        // Clean up playback
         flushAudioQueue();
         if (outputAudioCtx && outputAudioCtx.state !== 'closed') {
             outputAudioCtx.close().catch(() => {});
@@ -334,7 +792,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         btnToggleVoice.classList.add('btn-primary');
         voiceBtnIcon.textContent = '🎙️';
         voiceBtnText.textContent = 'Talk to Sarah';
-        setVoiceState('standby', 'Standby');
+        setVoiceState('standby', 'Ready to listen');
         avatar.setState('idle', "Sarah is ready when you are.");
     }
 
@@ -353,7 +811,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // Capture 16-bit 16kHz Raw PCM
     async function initMicrophoneCapture() {
         micStream = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -375,7 +832,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             const inputBuffer = audioProcessingEvent.inputBuffer;
             const channelData = inputBuffer.getChannelData(0);
 
-            // Compute volume to drive avatar listening reaction
             let sum = 0;
             for (let i = 0; i < channelData.length; i++) {
                 sum += channelData[i] * channelData[i];
@@ -385,7 +841,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 avatar.setState('listening', "Listening to you...");
             }
 
-            // Convert Float32Array to 16-bit signed PCM ArrayBuffer
             const pcm16 = new Int16Array(channelData.length);
             for (let i = 0; i < channelData.length; i++) {
                 const s = Math.max(-1, Math.min(1, channelData[i]));
@@ -398,7 +853,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         scriptNode.connect(inputAudioCtx.destination);
     }
 
-    // Playback 24kHz Raw PCM Audio
     function initAudioPlaybackEngine() {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         outputAudioCtx = new AudioCtx({ sampleRate: 24000 });
@@ -414,7 +868,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         const pcm16 = new Int16Array(arrayBuffer);
         const float32 = new Float32Array(pcm16.length);
 
-        // Convert Int16 PCM to Float32 & measure RMS volume for mouth lip-sync
         let sum = 0;
         for (let i = 0; i < pcm16.length; i++) {
             float32[i] = pcm16[i] / 32768.0;
@@ -422,11 +875,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         const rms = Math.sqrt(sum / pcm16.length);
 
-        // Drive woman talking animation visemes
         avatar.setState('speaking');
         avatar.setAudioVolume(rms);
 
-        // Create audio buffer and schedule playback
         const audioBuffer = outputAudioCtx.createBuffer(1, float32.length, 24000);
         audioBuffer.copyToChannel(float32, 0);
 
@@ -464,21 +915,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         avatar.setAudioVolume(0.0);
     }
 
-    // Toggle Voice Button
-    btnToggleVoice.addEventListener('click', () => {
-        if (isLiveActive) {
-            stopLiveSession();
+    // Toggle Voice Button (Universal handler for both modes)
+    function toggleVoice() {
+        if (engineMode === 'live_adk') {
+            if (isLiveActive) {
+                stopLiveSession();
+            } else {
+                startLiveSession();
+            }
         } else {
-            startLiveSession();
+            // Standard Web Speech Mode
+            wakeSarah();
+            if (isRecognizing) {
+                if (recognition) recognition.stop();
+            } else {
+                if (recognition) {
+                    try {
+                        recognition.start();
+                    } catch (e) {
+                        console.debug('Recognition restart:', e);
+                    }
+                } else {
+                    // No Web Speech API: prompt text
+                    const txt = prompt("Voice recognition is not available in this browser. Please type your message for Sarah:");
+                    if (txt) processUserVoiceQuery(txt);
+                }
+            }
         }
-    });
+    }
+
+    btnToggleVoice.addEventListener('click', toggleVoice);
 
     // Interrupt (Barge-In) Button
     btnBargeIn.addEventListener('click', () => {
         flushAudioQueue();
+        if (ttsAudioEl) {
+            ttsAudioEl.pause();
+            ttsAudioEl = null;
+        }
         if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
             liveSocket.send(JSON.stringify({ type: 'interrupt' }));
         }
+        avatar.setAudioVolume(0.0);
         avatar.setState('listening', "I'm listening...");
     });
 
@@ -487,11 +965,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnEmergency.addEventListener('click', async () => {
         avatar.setState('speaking', "I am notifying your emergency family contacts and caregivers immediately. Please stay calm, help is on the way.");
         appendConversationMsg('Sarah', "🚨 Emergency alert triggered! Caregivers and family contacts are being alerted.");
+        speakAssistantResponse("I am notifying your emergency family contacts and caregivers immediately. Please stay calm, help is on the way.");
         try {
             await api.sendFamilyContactRequest('Emergency', `EMERGENCY ALERT: Resident ${displayName} triggered emergency assistance.`);
             alert(`🚨 Emergency Alert Successfully Dispatched!\n\nFamily contacts and caregivers for resident ${displayName} have been notified.`);
         } catch (e) {
-            alert(`🚨 Emergency Notification Active: Please remain calm. Help is being dispatched.`);
+            alert(`🚨 Emergency Notification Active: Help is being dispatched.`);
         }
     });
 
@@ -502,27 +981,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const text = textInput.value.trim();
         if (!text) return;
         textInput.value = '';
-        appendConversationMsg(displayName || 'Resident', text);
-
-        if (isLiveActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) {
-            liveSocket.send(JSON.stringify({ type: 'text', text: text }));
-        } else {
-            avatar.setState('thinking', `"${text}"`);
-            try {
-                const res = await api.sendChat(text);
-                const reply = res.speech || "I received your request.";
-                appendConversationMsg('Sarah', reply);
-                avatar.setState('speaking', reply);
-
-                const audio = new Audio(`/api/tts?text=${encodeURIComponent(reply)}`);
-                audio.onended = () => avatar.setState('idle', "Ready when you are.");
-                audio.onerror = () => setTimeout(() => avatar.setState('idle', "Ready when you are."), 2500);
-                await audio.play().catch(() => setTimeout(() => avatar.setState('idle', "Ready when you are."), 2500));
-            } catch (err) {
-                appendConversationMsg('Sarah', "I had a moment connecting, but I'm here to help.");
-                avatar.setState('idle');
-            }
-        }
+        wakeSarah();
+        resetSilenceTimer();
+        await processUserVoiceQuery(text);
     }
 
     sendBtn.addEventListener('click', handleManualSend);

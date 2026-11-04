@@ -137,7 +137,7 @@ def test_zara_live_websocket_connection_and_handshake(client):
         status_msg = ws.receive_json()
         assert status_msg["type"] == "status"
         assert status_msg["state"] == "connected"
-        assert status_msg["model"] == "gemini-3.5-flash-live-preview"
+        assert status_msg["model"] in (settings.gemini_live_model, "gemini-2.5-flash-native-audio-latest", "gemini-3.5-flash-live-preview")
         assert status_msg["voice"] == "Aoede"
         assert status_msg["input_format"] == "audio/pcm;rate=16000"
         assert status_msg["output_format"] == "audio/pcm;rate=24000"

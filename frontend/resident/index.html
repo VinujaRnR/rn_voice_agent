@@ -31,10 +31,37 @@
         <div class="dashboard-grid" style="grid-template-columns: 360px 1fr; gap: 20px;">
             <!-- Left: Sarah Woman Talking Animated Avatar & Live Voice Controls -->
             <div class="card avatar-card" style="display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px;">
+                <!-- Voice AI Badges & Regional Accent Bar -->
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; width: 100%; margin-bottom: 12px;">
+                    <!-- Wake Word Status Badge -->
+                    <div class="wake-word-badge asleep" id="wake-badge" title="Say 'Sarah' (any pronunciation) to trigger" style="cursor: pointer; padding: 4px 10px; border-radius: 16px; font-size: 0.82rem; display: flex; align-items: center; gap: 6px; background: #f1f5f9; border: 1px solid var(--border-color);">
+                        <span id="wake-icon">💤</span>
+                        <span id="wake-label">Standby: Greet <strong>"Sarah"</strong></span>
+                        <span id="wake-timer-pill" class="status-pill pill-green" style="display: none; padding: 1px 6px; font-size: 0.75rem;">5:00</span>
+                    </div>
+
+                    <!-- Regional Accent Selector -->
+                    <div style="display: flex; align-items: center; gap: 4px; background: #f8fafc; border: 1px solid var(--border-color); border-radius: 16px; padding: 2px 8px; font-size: 0.82rem;">
+                        <span>🗣️</span>
+                        <select id="accent-select" style="border: none; background: transparent; font-size: 0.8rem; color: var(--text-base); outline: none; cursor: pointer;">
+                            <option value="en-LK" selected>Sri Lanka (en-LK)</option>
+                            <option value="en-AU">Australia (en-AU)</option>
+                            <option value="en-US">US (en-US)</option>
+                            <option value="en-GB">UK (en-GB)</option>
+                            <option value="en-IN">India (en-IN)</option>
+                        </select>
+                    </div>
+
+                    <!-- Voice Engine Toggle -->
+                    <button id="engine-mode-btn" class="a11y-btn" style="padding: 3px 10px; border-radius: 16px; font-size: 0.78rem; background: var(--primary-light); color: var(--primary-dark); border: 1px solid rgba(59,130,246,0.3); cursor: pointer; font-weight: 600;" title="Toggle between Standard Sarah Voice and Google ADK Live BIDI">
+                        🎙️ Voice Engine: Sarah AI
+                    </button>
+                </div>
+
                 <canvas id="sarah-canvas" width="300" height="300" aria-label="Sarah Animated Female Voice AI" style="max-width: 100%; height: auto; border-radius: 50%; box-shadow: 0 4px 16px rgba(0,0,0,0.08);"></canvas>
                 
                 <div class="caption-bubble" id="caption-box" role="status" aria-live="polite" style="width: 100%; margin-top: 14px; min-height: 48px; font-size: 0.95rem; line-height: 1.4;">
-                    "Hello! I'm Sarah, your personal voice companion. Click 'Talk to Sarah' to start speaking."
+                    "Hello! I'm Sarah, your personal voice companion. Click 'Talk to Sarah' or say 'Sarah' to start speaking."
                 </div>
 
                 <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 10px; width: 100%;">
@@ -61,8 +88,27 @@
                 <div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                         <h2 class="card-title" style="margin-bottom: 0;"><span>💬</span> Live Voice Conversation</h2>
-                        <span class="status-pill pill-blue" id="live-voice-state">Standby</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span class="status-pill pill-blue" id="live-voice-state">Ready to listen</span>
+                            <button id="btn-clear-conv" class="a11y-btn" style="padding: 4px 8px; font-size: 0.78rem; background: #f1f5f9; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer;">Clear</button>
+                        </div>
                     </div>
+
+                    <!-- Music Streaming Player Widget -->
+                    <div id="sarah-music-bar" style="display: none; background: linear-gradient(135deg, #ede9fe 0%, #e0e7ff 100%); border: 1px solid #c7d2fe; border-radius: var(--radius-md); padding: 10px 14px; margin-bottom: 12px; align-items: center; justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.4rem;">🎵</span>
+                            <div>
+                                <strong id="music-title" style="color: #4338ca; font-size: 0.92rem; display: block;">Can't Help Falling in Love</strong>
+                                <span id="music-status" style="font-size: 0.78rem; color: #6366f1;">Playing • Elderly Care Music</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button id="music-play-btn" class="a11y-btn" style="padding: 4px 12px; background: #4f46e5; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">⏸️ Pause</button>
+                            <button id="music-stop-btn" class="a11y-btn" style="padding: 4px 12px; background: white; color: #4338ca; border: 1px solid #c7d2fe; border-radius: 6px; font-weight: 600; cursor: pointer;">⏹️ Stop</button>
+                        </div>
+                    </div>
+                    <audio id="sarah-audio-player" loop preload="none"></audio>
                     
                     <div class="live-conversation-container" id="conversation-container" style="min-height: 250px; max-height: 330px; overflow-y: auto; background: var(--bg-base); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px; display: flex; flex-direction: column; gap: 10px;">
                         <div class="msg-box msg-agent" style="background: white; border: 1px solid var(--border-color); padding: 12px 16px; border-radius: 12px; border-left: 4px solid var(--primary);">
@@ -73,7 +119,7 @@
                 </div>
 
                 <div style="margin-top: 14px; display: flex; gap: 8px;">
-                    <input type="text" id="manual-text-input" class="form-input" placeholder="Or type a question/command to Sarah..." style="flex: 1; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.95rem;" />
+                    <input type="text" id="manual-text-input" class="form-input" placeholder="Or type a question/command to Sarah (e.g. 'play a song', 'turn on lights')..." style="flex: 1; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.95rem;" />
                     <button id="manual-send-btn" class="a11y-btn" style="background: var(--primary); color: white; padding: 10px 18px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Send</button>
                 </div>
             </div>
@@ -113,6 +159,7 @@
 
     <!-- Scripts -->
     <script src="/avatar/sarah_avatar.js"></script>
+    <script src="/tts.js"></script>
     <script src="/services/api.js"></script>
     <script src="/components/accessibility.js"></script>
     <script src="/shared/nav.js"></script>

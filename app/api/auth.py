@@ -185,3 +185,46 @@ async def generate_websocket_ticket(
         ws_endpoint="/api/v1/sarah-live/ws"
     )
 
+
+@router.get("/default-resident")
+async def get_default_resident(
+    session: AsyncSession = Depends(get_db_session)
+):
+    """Retrieve or bootstrap default active resident from MySQL for initial dashboard view."""
+    from sqlalchemy import select
+    from app.database.models.identity import User
+    stmt = select(User).where(User.role == "resident").order_by(User.created_at.desc())
+    res = await session.execute(stmt)
+    user = res.scalars().first()
+
+    if not user:
+        # Create standard resident if database is freshly initialized
+        user, hh = await UserService.register_user(
+            session=session,
+            email="vinujahansindu765@gmail.com",
+            password="Password123!",
+            full_name="Vinuja Hansindu",
+            role="resident",
+            household_name="Colombo",
+            seed_starter_devices=True
+        )
+
+    households = await HouseholdService.get_user_households(session, user.id)
+    household_id = households[0].id if households else None
+    household_name = households[0].name if households else "Home Residence"
+
+    token_data = await UserService.generate_user_tokens(
+        session=session,
+        user=user,
+        household_id=household_id
+    )
+
+    return {
+        **token_data,
+        "email": user.email,
+        "full_name": user.full_name,
+        "household_id": household_id,
+        "household_name": household_name
+    }
+
+

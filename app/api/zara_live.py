@@ -15,6 +15,7 @@ from google.genai import types
 
 from app.config import settings
 from app.security.auth import validate_ws_ticket
+from app.gemini.tool_dispatcher import dispatch_tool_sync
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,80 @@ You communicate naturally with human-like conversation through real-time bidirec
 You have native audio understanding and voice generation with prebuilt voice Aoede.
 You support automatic language detection: identify whatever language the user speaks (English, Sinhala, Tamil, Spanish, French, Japanese, Mandarin, etc.) and seamlessly respond in the same language.
 Keep responses concise, conversational, friendly, warm, and natural (1 to 2 sentences), ideal for real-time speech.
-You help the resident with elderly care, companion conversation, health routines, smart devices, playing music, and daily questions."""
+You help the resident with elderly care, companion conversation, health routines, smart devices, playing music, and daily questions.
+You have access to tools to control smart devices, check weather, set reminders, and play music. Use them whenever requested."""
 
 ZARA_LIVE_SYSTEM_INSTRUCTION = SARAH_LIVE_SYSTEM_INSTRUCTION
+
+
+def control_smart_device(device_id: str, action: str = "turn_on") -> str:
+    """Turn a home device on or off (e.g. room_lights, kitchen_lights, farm_lights, testing_farm_lights, desk_lamp, light_1, node 98a316e6b658).
+    Args:
+        device_id: Device identifier or name, e.g. 'room_lights', 'farm_lights', 'testing_farm_lights', 'desk_lamp', '98a316e6b658'
+        action: 'turn_on' or 'turn_off'
+    """
+    try:
+        res = dispatch_tool_sync("control_device", {"device_id": device_id, "action": action})
+        return str(res.get("feedback") or res.get("status") or "Command dispatched to RN Hub.")
+    except Exception as e:
+        return f"Could not control device: {e}"
+
+
+def list_smart_devices() -> str:
+    """Retrieve status of all connected smart home devices in the household."""
+    try:
+        res = dispatch_tool_sync("list_devices", {})
+        return str(res)
+    except Exception as e:
+        return f"Could not list devices: {e}"
+
+
+def set_care_reminder(reminder_text: str, due_time: str = "soon") -> str:
+    """Set a medication or care reminder for the resident.
+    Args:
+        reminder_text: What the reminder is for, e.g. 'take evening heart medicine'
+        due_time: Time for the reminder, e.g. 'at 8 PM', 'in 15 minutes'
+    """
+    try:
+        res = dispatch_tool_sync("set_reminder", {"text": reminder_text, "time": due_time})
+        return str(res.get("message") or "Reminder successfully set.")
+    except Exception as e:
+        return f"Could not set reminder: {e}"
+
+
+def check_local_weather(city: str = "Colombo") -> str:
+    """Get the current weather and temperature for a city.
+    Args:
+        city: City name, e.g. 'Colombo', 'Sydney', 'Melbourne'
+    """
+    try:
+        res = dispatch_tool_sync("get_weather", {"city": city})
+        if "temperature" in res:
+            return f"Weather in {res.get('city')}: {res.get('condition')}, {res.get('temperature')}, humidity {res.get('humidity')}."
+        return str(res)
+    except Exception as e:
+        return f"Could not get weather: {e}"
+
+
+def play_music(song_or_style: str = "relaxing music") -> str:
+    """Play a music track or ambient relaxing sounds for the resident.
+    Args:
+        song_or_style: Name of song or music style, e.g. 'relaxing music', 'Elvis Presley', 'classical'
+    """
+    try:
+        res = dispatch_tool_sync("control_music", {"action": "play", "query": song_or_style})
+        return str(res.get("speech") or "Playing relaxing music.")
+    except Exception as e:
+        return f"Could not play music: {e}"
+
+
+SARAH_LIVE_TOOLS = [
+    control_smart_device,
+    list_smart_devices,
+    set_care_reminder,
+    check_local_weather,
+    play_music
+]
 
 
 def build_zara_agent(model_name: str) -> Agent:
@@ -35,7 +107,8 @@ def build_zara_agent(model_name: str) -> Agent:
     return Agent(
         name="sarah_live_agent",
         model=model_name,
-        instruction=SARAH_LIVE_SYSTEM_INSTRUCTION
+        instruction=SARAH_LIVE_SYSTEM_INSTRUCTION,
+        tools=SARAH_LIVE_TOOLS
     )
 
 
@@ -153,7 +226,11 @@ async def zara_live_websocket(
 
     async def stream_from_runner():
         """Stream events, 24kHz audio, and dual transcriptions from ADK runner to client."""
-        models_to_try = [primary_model, fallback_model]
+        candidate_models = [primary_model, fallback_model, "gemini-2.5-flash-native-audio-latest", "gemini-3.1-flash-live-preview"]
+        models_to_try = []
+        for m in candidate_models:
+            if m and m not in models_to_try:
+                models_to_try.append(m)
         for idx, cur_model in enumerate(models_to_try):
             try:
                 agent = build_zara_agent(cur_model)
