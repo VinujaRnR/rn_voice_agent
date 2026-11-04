@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zara Live Studio — Google ADK & Gemini Live BIDI</title>
+  <link rel="stylesheet" href="zara_live.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="studio-container">
+    <!-- Header -->
+    <header class="studio-header">
+      <div class="brand-section">
+        <div class="brand-orb">⚡</div>
+        <div class="brand-text">
+          <h1>Zara Live Studio</h1>
+          <span>Google ADK • Gemini Live BIDI Real-Time Audio</span>
+        </div>
+      </div>
+      <div class="tech-badges">
+        <div class="badge cyan"><span>🤖</span><span>gemini-3.5-flash-live-preview</span></div>
+        <div class="badge purple"><span>🎙️</span><span>Voice: Aoede</span></div>
+        <div class="badge emerald"><span>⚡</span><span>StreamingMode.BIDI</span></div>
+        <div class="badge amber"><span>🔐</span><span>Short-Lived JWT</span></div>
+      </div>
+    </header>
+
+    <!-- Main Stage / Visualizer -->
+    <div class="stage-card">
+      <div class="visualizer-wrapper">
+        <canvas id="visualizer-canvas" width="220" height="220"></canvas>
+        <div class="avatar-orb" id="avatar-orb">
+          <span class="orb-inner-icon" id="orb-icon">✨</span>
+        </div>
+      </div>
+
+      <div class="status-callout">
+        <div class="status-pill" id="status-pill">
+          <span class="status-dot"></span>
+          <span id="status-label">Standby: Press Start to Connect</span>
+        </div>
+        <span class="status-hint" id="status-hint">Direct duplex microphone & voice streaming over WebSocket</span>
+      </div>
+
+      <div class="controls-row">
+        <button type="button" class="action-btn btn-start" id="btn-toggle-session">
+          <span id="btn-icon">🎙️</span>
+          <span id="btn-text">Start Live Voice Session</span>
+        </button>
+        <button type="button" class="action-btn btn-secondary" id="btn-interrupt" disabled title="Interrupt Zara immediately while speaking">
+          <span>🛑</span>
+          <span>Barge-in / Interrupt</span>
+        </button>
+        <a href="/" class="action-btn btn-secondary" style="text-decoration: none;">
+          <span>←</span>
+          <span>Sarah Mode</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Live Transcriptions Stage -->
+    <div class="transcript-stage">
+      <!-- Input Transcription (User Speech) -->
+      <div class="transcript-card">
+        <div class="transcript-header">
+          <span class="title"><span>👤</span> You (16 kHz Native Audio)</span>
+          <span class="lang-pill" id="user-lang-pill">Auto-Detect</span>
+        </div>
+        <div class="transcript-body" id="input-transcript">
+          Listening for spoken voice... Speak naturally in English, Sinhala, Tamil, or your native language.
+        </div>
+      </div>
+
+      <!-- Output Transcription (Zara Speech) -->
+      <div class="transcript-card">
+        <div class="transcript-header">
+          <span class="title"><span>⚡</span> Zara (Aoede 24 kHz Live Output)</span>
+          <span class="badge purple" style="font-size: 0.7rem; padding: 2px 8px;">Gemini Live</span>
+        </div>
+        <div class="transcript-body" id="output-transcript">
+          Zara's real-time voice transcription will stream live here as she speaks.
+        </div>
+      </div>
+    </div>
+
+    <!-- Technical Architecture Specifications -->
+    <div class="specs-card">
+      <div class="specs-title">
+        <span>⚙️</span>
+        <span>Active BIDI Voice AI Architecture</span>
+      </div>
+      <div class="specs-grid">
+        <div class="spec-item">
+          <span class="spec-label">AI Model</span>
+          <span class="spec-val">gemini-3.5-flash-live-preview</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Voice AI API</span>
+          <span class="spec-val">Google Gemini Live API</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Agent Framework</span>
+          <span class="spec-val">Google ADK</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Session Runner</span>
+          <span class="spec-val">Runner.run_live</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Streaming Mode</span>
+          <span class="spec-val">StreamingMode.BIDI</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Backend Interface</span>
+          <span class="spec-val">WebSocket (WS)</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Endpoint</span>
+          <span class="spec-val">/api/v1/zara-live/ws</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Input Audio Format</span>
+          <span class="spec-val">Raw PCM, 16-bit, 16 kHz</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Output Audio Format</span>
+          <span class="spec-val">Raw PCM, 16-bit, 24 kHz</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Voice Personality</span>
+          <span class="spec-val">Aoede (Prebuilt Voice)</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Speech Recognition</span>
+          <span class="spec-val">Native Gemini Audio Understanding</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Speech Generation</span>
+          <span class="spec-val">Native Gemini Audio Generation</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Transcription</span>
+          <span class="spec-val">Bidirectional Real-Time Transcripts</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Authentication</span>
+          <span class="spec-val">Short-lived JWT Tickets</span>
+        </div>
+        <div class="spec-item">
+          <span class="spec-label">Multilingual</span>
+          <span class="spec-val">Automatic Language Detection</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="zara_live.js"></script>
+</body>
+</html>
+

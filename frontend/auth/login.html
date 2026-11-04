@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log In — Sarah & Zara AI Platform</title>
+  <link rel="stylesheet" href="auth.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-header">
+      <div class="brand-badge">
+        <span>🤖</span>
+        <span>RN Robots Cloud Sarah & Zara</span>
+      </div>
+      <h1 class="auth-title">Welcome Back</h1>
+      <p class="auth-subtitle">Sign in to your elderly care & voice assistance portal</p>
+    </div>
+
+    <!-- Alert Message Box -->
+    <div id="auth-alert" class="auth-alert" role="alert"></div>
+
+    <form class="auth-form" id="login-form">
+      <div class="form-group">
+        <label for="email" class="form-label">Email Address</label>
+        <div class="input-wrapper">
+          <input 
+            type="email" 
+            id="email" 
+            class="form-input" 
+            placeholder="resident@rnrobots.com" 
+            required 
+            autocomplete="email" 
+          />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="password" class="form-label">Password</label>
+        <div class="input-wrapper">
+          <input 
+            type="password" 
+            id="password" 
+            class="form-input" 
+            placeholder="••••••••••••" 
+            required 
+            autocomplete="current-password" 
+          />
+        </div>
+      </div>
+
+      <div class="form-options">
+        <label class="remember-me">
+          <input type="checkbox" id="remember-me" checked />
+          <span>Remember me</span>
+        </label>
+        <a href="#" class="forgot-link" onclick="alert('Please contact your facility administrator or caregiver to reset credentials.'); return false;">Forgot password?</a>
+      </div>
+
+      <button type="submit" class="btn-primary" id="login-btn">
+        <span id="btn-text">Log In</span>
+      </button>
+    </form>
+
+    <div class="auth-footer">
+      <span>Don't have an account yet?</span>
+      <a href="signin.html">Sign Up / Register</a>
+    </div>
+  </div>
+
+  <a href="/" class="nav-back-link">
+    <span>←</span>
+    <span>Back to Voice Assistant Home</span>
+  </a>
+
+  <script src="auth.js"></script>
+</body>
+</html>
+

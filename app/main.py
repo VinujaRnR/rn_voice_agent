@@ -15,6 +15,7 @@ from app.api.care import router as care_router
 from app.api.safety import router as safety_router
 from app.api.local_services import router as services_router
 from app.api.entertainment import router as entertainment_router
+from app.api.zara_live import router as zara_live_router
 from app.rabbitmq.connection import rabbitmq_connection
 from app.rabbitmq.consumer import result_consumer
 from app.tools.reminders import start_reminder_worker, stop_reminder_worker
@@ -65,6 +66,7 @@ app.include_router(care_router)
 app.include_router(safety_router)
 app.include_router(services_router)
 app.include_router(entertainment_router)
+app.include_router(zara_live_router)
 
 
 @app.get("/health")

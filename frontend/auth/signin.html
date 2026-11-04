@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In & Register — Sarah & Zara AI Platform</title>
+  <link rel="stylesheet" href="auth.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-header">
+      <div class="brand-badge">
+        <span>✨</span>
+        <span>RN Robots Cloud Sarah & Zara</span>
+      </div>
+      <h1 class="auth-title">Create Account</h1>
+      <p class="auth-subtitle">Join the multi-user Sarah & Zara elderly care platform</p>
+    </div>
+
+    <!-- Alert Message Box -->
+    <div id="auth-alert" class="auth-alert" role="alert"></div>
+
+    <form class="auth-form" id="register-form">
+      <div class="form-group">
+        <label for="reg-fullname" class="form-label">Full Name</label>
+        <div class="input-wrapper">
+          <input 
+            type="text" 
+            id="reg-fullname" 
+            class="form-input" 
+            placeholder="Margaret Walker" 
+            required 
+            autocomplete="name" 
+          />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="reg-email" class="form-label">Email Address</label>
+        <div class="input-wrapper">
+          <input 
+            type="email" 
+            id="reg-email" 
+            class="form-input" 
+            placeholder="margaret@example.com" 
+            required 
+            autocomplete="email" 
+          />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="reg-role" class="form-label">Platform Role</label>
+        <div class="input-wrapper">
+          <select id="reg-role" class="form-select" required>
+            <option value="resident" selected>Resident (Elderly Care Recipient)</option>
+            <option value="family_member">Family Member</option>
+            <option value="caregiver">Professional Caregiver</option>
+            <option value="facility_admin">Facility Administrator</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="reg-household" class="form-label">Household / Facility Name</label>
+        <div class="input-wrapper">
+          <input 
+            type="text" 
+            id="reg-household" 
+            class="form-input" 
+            placeholder="e.g. Sunnyvale Residence Suite 4B" 
+          />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="reg-password" class="form-label">Password</label>
+        <div class="input-wrapper">
+          <input 
+            type="password" 
+            id="reg-password" 
+            class="form-input" 
+            placeholder="At least 6 characters" 
+            required 
+            minlength="6" 
+            autocomplete="new-password" 
+          />
+        </div>
+      </div>
+
+      <button type="submit" class="btn-primary" id="register-btn">
+        <span id="btn-text">Create Account</span>
+      </button>
+    </form>
+
+    <div class="auth-footer">
+      <span>Already have an account?</span>
+      <a href="login.html">Log In</a>
+    </div>
+  </div>
+
+  <a href="/" class="nav-back-link">
+    <span>←</span>
+    <span>Back to Voice Assistant Home</span>
+  </a>
+
+  <script src="auth.js"></script>
+</body>
+</html>
+

@@ -1,5 +1,6 @@
 """Authentication and user session routes."""
 from typing import Optional, Dict, Any
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import jwt
@@ -17,7 +18,8 @@ from app.services.identity.household_service import HouseholdService
 from app.services.identity.resident_service import ResidentService
 from app.middleware.request_context import RequestContext, get_request_context
 from app.middleware.authorization import require_authenticated
-from app.security.auth import decode_token, create_access_token
+from app.security.auth import decode_token, create_ws_ticket, create_access_token
+from app.config import settings
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
 
@@ -134,5 +136,51 @@ async def get_current_user_profile(
         household_id=ctx.household_id or (households[0].id if households else None),
         households=hh_list,
         preferred_name=profile.preferred_name if profile else None
+    )
+
+
+class WsTicketResponse(BaseModel):
+    ticket: str
+    expires_in: int
+    user_id: str
+    role: str
+    ws_endpoint: str = "/api/v1/zara-live/ws"
+
+
+@router.post("/ws-ticket", response_model=WsTicketResponse)
+@router.get("/ws-ticket", response_model=WsTicketResponse)
+async def generate_websocket_ticket(
+    ctx: Optional[RequestContext] = Depends(get_request_context)
+):
+    """Generate a short-lived signed JWT ticket for authenticating live WebSocket sessions."""
+    import uuid
+    if ctx and ctx.is_authenticated and ctx.actor_id:
+        user_id = ctx.actor_id
+        role = ctx.role
+        claims = {
+            "role": role,
+            "household_id": ctx.household_id,
+            "permissions": list(ctx.permissions or [])
+        }
+    else:
+        guest_id = f"guest_{uuid.uuid4().hex[:8]}"
+        user_id = guest_id
+        role = "guest"
+        claims = {
+            "role": "guest",
+            "is_guest": True
+        }
+
+    ticket = create_ws_ticket(
+        subject=user_id,
+        claims=claims,
+        expires_seconds=settings.zara_live_ws_ticket_expire_seconds
+    )
+    return WsTicketResponse(
+        ticket=ticket,
+        expires_in=settings.zara_live_ws_ticket_expire_seconds,
+        user_id=user_id,
+        role=role,
+        ws_endpoint="/api/v1/zara-live/ws"
     )
 

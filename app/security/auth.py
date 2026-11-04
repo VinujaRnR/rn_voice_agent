@@ -94,3 +94,34 @@ def decode_token(token: str) -> Dict[str, Any]:
         options={"require": ["exp", "iat", "sub"]}
     )
 
+
+def create_ws_ticket(
+    subject: str,
+    claims: Optional[Dict[str, Any]] = None,
+    expires_seconds: Optional[int] = None
+) -> str:
+    """Generate a short-lived signed JWT ticket for WebSocket authentication."""
+    now = datetime.now(timezone.utc)
+    sec = expires_seconds or settings.zara_live_ws_ticket_expire_seconds
+    expire = now + timedelta(seconds=sec)
+    payload: Dict[str, Any] = {
+        "sub": str(subject),
+        "iat": int(now.timestamp()),
+        "exp": int(expire.timestamp()),
+        "iss": settings.jwt_issuer,
+        "token_type": "ws_ticket"
+    }
+    if claims:
+        payload.update(claims)
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def validate_ws_ticket(ticket: str) -> Dict[str, Any]:
+    """Validate a short-lived WebSocket JWT ticket or standard access token."""
+    payload = decode_token(ticket)
+    token_type = payload.get("token_type")
+    if token_type not in ("ws_ticket", "access"):
+        raise jwt.InvalidTokenError(f"Invalid token type for WebSocket connection: '{token_type}'")
+    return payload
+
+

@@ -49,9 +49,17 @@ function renderSharedNav(activePage) {
                 <span class="icon">🎙️</span>
                 <span class="label">Voice Dev Mode</span>
             </a>
+            <a href="/zara/index.html" class="nav-item ${activePage === 'zara' ? 'active' : ''}">
+                <span class="icon">⚡</span>
+                <span class="label">Zara Live BIDI</span>
+            </a>
             <a href="/devices.html" class="nav-item ${activePage === 'devices' ? 'active' : ''}">
                 <span class="icon">🌐</span>
                 <span class="label">Hardware Devices</span>
+            </a>
+            <a href="/auth/login.html" class="nav-item ${activePage === 'login' ? 'active' : ''}">
+                <span class="icon">🔐</span>
+                <span class="label">Log In</span>
             </a>
         </nav>
         <div id="a11y-container"></div>
