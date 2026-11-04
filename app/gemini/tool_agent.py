@@ -21,6 +21,7 @@ from app.security.command_validator import command_safety_validator
 from app.context.builder import context_builder
 from app.context.memory import conversation_memory
 from app.stt.accent_normalizer import normalize_accent_transcript
+from app.gemini.tool_dispatcher import dispatch_tool_sync
 
 logger = logging.getLogger(__name__)
 
@@ -28,113 +29,8 @@ SYSTEM_PROMPT_PATH = Path(__file__).parent / "system_prompt.txt"
 
 
 def execute_tool(name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute a validated Python tool handler."""
-    args = arguments or {}
-
-    try:
-        if name == "get_current_time":
-            tz = args.get("timezone", "Asia/Colombo")
-            return get_current_time(timezone=tz)
-
-        elif name == "get_weather":
-            city = args.get("city", "Colombo")
-            days = args.get("forecast_days", 1)
-            return get_weather(city=city, forecast_days=days)
-
-        elif name == "search_web":
-            query = args.get("query", "")
-            return search_web(query=query)
-
-        elif name == "search_places":
-            query = args.get("query", "restaurants")
-            loc = args.get("location", "Colombo")
-            return search_places(query=query, location=loc)
-
-        elif name == "list_devices":
-            return list_devices()
-
-        elif name == "get_device_status":
-            dev_id = args.get("device_id", "")
-            return get_device_status(device_id=dev_id)
-
-        elif name == "control_device":
-            dev_id = args.get("device_id", "")
-            action = args.get("action", "")
-            params = args.get("parameters", {})
-            valid, msg = command_safety_validator.validate_command(dev_id, action, params)
-            if not valid:
-                return {"error": msg, "status": "safety_violation"}
-            return control_device(device_id=dev_id, action=action, parameters=params)
-
-        elif name == "schedule_device_action":
-            dev_id = args.get("device_id", "")
-            action = args.get("action", "")
-            delay = args.get("delay_minutes", 15)
-            params = args.get("parameters", {})
-            return schedule_device_action(device_id=dev_id, action=action, delay_minutes=delay, parameters=params)
-
-        elif name == "set_reminder":
-            text = args.get("text", "")
-            delay_secs = args.get("delay_seconds")
-            delay_mins = args.get("delay_minutes")
-            rec = args.get("recurrence")
-            sess = args.get("session_id", "default_session")
-            return set_reminder(text=text, delay_seconds=delay_secs, delay_minutes=delay_mins, session_id=sess, recurrence=rec)
-
-        elif name == "list_reminders":
-            sess = args.get("session_id")
-            return list_reminders(session_id=sess)
-
-        elif name == "cancel_reminder":
-            target = args.get("reminder_id", "all")
-            sess = args.get("session_id")
-            return cancel_reminder(reminder_id_or_keyword=target, session_id=sess)
-
-        elif name == "search_past_conversations":
-            q = args.get("query", "")
-            user_id = args.get("user_id", "default_user")
-            results = conversation_memory.search_past_conversations(query=q, user_id=user_id)
-            return {
-                "status": "success",
-                "query": q,
-                "count": len(results),
-                "matches": [
-                    {
-                        "role": m["role"],
-                        "content": m["content"],
-                        "content_hash": m.get("content_hash"),
-                        "turn_hash": m.get("turn_hash"),
-                        "timestamp": m.get("timestamp")
-                    }
-                    for m in results
-                ]
-            }
-
-        elif name == "clarify_weather_context":
-            return {
-                "status": "clarification_needed",
-                "speech": "Where are you heading, or would you like the weather forecast for your current location in Colombo?"
-            }
-
-        elif name == "clarify_reminder_context":
-            from app.tools.reminders import generate_reminder_clarification_question
-            verb = args.get("verb")
-            partial_task = args.get("partial_task")
-            time_label = args.get("time_label")
-            speech = generate_reminder_clarification_question(verb, partial_task, time_label)
-            return {
-                "status": "clarification_needed",
-                "partial_verb": verb,
-                "partial_task": partial_task,
-                "time_label": time_label,
-                "speech": speech
-            }
-
-        return {"error": f"Unknown or unauthorized tool: '{name}'"}
-
-    except Exception as e:
-        logger.error(f"Error executing tool {name}: {e}")
-        return {"error": f"Tool execution failed: {str(e)}"}
+    """Execute a validated Python tool handler via secure tool dispatcher."""
+    return dispatch_tool_sync(tool_name=name, arguments=arguments or {})
 
 
 class ToolAgent:
@@ -345,6 +241,60 @@ class ToolAgent:
             ).strip()
             tools_to_run.append(("search_past_conversations", {"query": clean_term or ""}))
 
+        # Music & Audio Entertainment intent (e.g. "play a song", "play music", "stop music")
+        music_keywords = [
+            "play a song", "play song", "play music", "play some music", "play track",
+            "play audio", "play tune", "play relaxing music", "play peaceful", "play playlist",
+            "start music", "listen to music", "listen to a song", "put on some music"
+        ]
+        is_music_play = (
+            any(k in q for k in music_keywords) or
+            bool(re.search(r"\b(?:play|put on)\s+(?:me\s+)?(?:a\s+|some\s+)?(?:[\w\-]+\s+)?(?:song|songs|music|track|tracks|tune|tunes|playlist|melody|audio)\b", q)) or
+            bool(re.search(r"\b(?:play)\s+(?:elvis|louis armstrong|vera lynn|audrey hepburn|the beatles|jazz|piano|classical|pop)\b", q))
+        )
+        is_music_control = any(k in q for k in [
+            "pause music", "stop music", "pause song", "stop song", "resume music",
+            "next song", "skip song", "next track", "skip track", "previous song",
+            "volume up", "volume down", "turn up the music", "turn down the music"
+        ])
+
+        if is_music_play or is_music_control:
+            act = "play"
+            track_query = None
+            vol = None
+            if any(k in q for k in ["pause"]):
+                act = "pause"
+            elif any(k in q for k in ["stop"]):
+                act = "stop"
+            elif any(k in q for k in ["next", "skip"]):
+                act = "next"
+            elif any(k in q for k in ["resume"]):
+                act = "resume"
+            elif any(k in q for k in ["volume up", "turn up"]):
+                act = "volume"
+                vol = 0.9
+            elif any(k in q for k in ["volume down", "turn down"]):
+                act = "volume"
+                vol = 0.5
+            else:
+                act = "play"
+                clean_track = re.sub(
+                    r"\b(?:can you\s+)?(?:could you\s+)?(?:please\s+)?(?:sarah\s*,?\s*)?(?:play\s+(?:me\s+)?(?:a\s+|some\s+)?(?:song|music|track|tune|audio|melody)?(?:\s+called|\s+titled|\s+by)?|put on\s+(?:some\s+)?(?:music)?)\b",
+                    "",
+                    q,
+                    flags=re.IGNORECASE
+                ).strip()
+                if clean_track and clean_track.lower() not in ["a song", "song", "music", "some music", "something", "track", "tune"]:
+                    track_query = clean_track.strip("\"'")
+                else:
+                    track_query = "Can't Help Falling in Love by Elvis Presley"
+
+            tools_to_run.append(("control_music", {
+                "action": act,
+                "query": track_query,
+                "volume_level": vol
+            }))
+
         # Device status intent (e.g., "Are the farm lights on?", "whether the testing farm lights are on")
         is_science_or_knowledge = any(k in q for k in ["speed of light", "why is", "how does", "what is light", "explain", "meaning of", "tell me about"])
         if not is_science_or_knowledge:
@@ -543,6 +493,20 @@ class ToolAgent:
                         if det_cancel.get("status") == "not_found" and "cancelled" in spoken.lower():
                             spoken = det_cancel.get("feedback")
 
+                    music_obj = None
+                    if "control_music" in tool_results or "play_music" in tool_results:
+                        m_res = tool_results.get("control_music") or tool_results.get("play_music")
+                        from app.gemini.schemas import MusicPlaybackSpec
+                        music_obj = MusicPlaybackSpec(
+                            action=m_res.get("action", "play"),
+                            track=m_res.get("track"),
+                            media_url=m_res.get("media_url", "/audio/relaxing_music.wav"),
+                            volume=m_res.get("volume", 0.8),
+                            status=m_res.get("status", "playing")
+                        )
+                        if any(w in spoken.lower() for w in ["can't play music", "cannot play music", "don't have the ability to play", "unable to play music"]):
+                            spoken = m_res.get("speech", "Now playing music for you.")
+
                     mode_val = "device_command" if device_command_obj else "answer"
                     reasoning_trace = f"Synthesized evidence from executed tools: {list(tool_results.keys())}."
                     has_rem_tool = any(k in tool_results for k in ["set_reminder", "list_reminders", "cancel_reminder"])
@@ -553,7 +517,8 @@ class ToolAgent:
                         command=device_command_obj,
                         missing_fields=[],
                         reminder=reminder_obj,
-                        reminder_already_executed=has_rem_tool
+                        reminder_already_executed=has_rem_tool,
+                        music=music_obj
                     )
             except Exception as e:
                 logger.warning(f"Gemini live inference fallback ({e}). Using deterministic tool synthesis.")
@@ -676,6 +641,20 @@ class ToolAgent:
             else:
                 spoken_parts.append("I checked our previous conversation records, but couldn't find matching notes.")
 
+        det_music_obj = None
+        if "control_music" in tool_results or "play_music" in tool_results:
+            m_res = tool_results.get("control_music") or tool_results.get("play_music")
+            if m_res.get("speech"):
+                spoken_parts.append(m_res.get("speech"))
+            from app.gemini.schemas import MusicPlaybackSpec
+            det_music_obj = MusicPlaybackSpec(
+                action=m_res.get("action", "play"),
+                track=m_res.get("track"),
+                media_url=m_res.get("media_url", "/audio/relaxing_music.wav"),
+                volume=m_res.get("volume", 0.8),
+                status=m_res.get("status", "playing")
+            )
+
         if not spoken_parts:
             spoken_parts.append(f"I received your request: '{query}'. How can I assist you further?")
 
@@ -689,7 +668,8 @@ class ToolAgent:
             command=device_command_obj,
             missing_fields=[],
             reminder=det_reminder_obj,
-            reminder_already_executed=has_rem_tool
+            reminder_already_executed=has_rem_tool,
+            music=det_music_obj
         )
 
 

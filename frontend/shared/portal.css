@@ -1,0 +1,397 @@
+/* Sarah Multi-User Elderly Care Portals Styling */
+
+:root {
+    --primary: #4a90e2;
+    --primary-dark: #2a6db9;
+    --primary-light: #ebf3fd;
+    --secondary: #e84393;
+    --success: #27ae60;
+    --warning: #f39c12;
+    --danger: #e74c3c;
+    --bg-base: #f5f8fb;
+    --bg-card: #ffffff;
+    --text-main: #2c3e50;
+    --text-muted: #6c7a89;
+    --border-color: #e2e8f0;
+    --radius-lg: 16px;
+    --radius-md: 10px;
+    --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.05);
+    --base-font-size: 16px;
+}
+
+/* Accessible Font Sizing */
+html.font-normal { font-size: 16px; }
+html.font-large { font-size: 19px; }
+html.font-xlarge { font-size: 23px; }
+
+/* Accessible High Contrast Mode */
+html.high-contrast {
+    --bg-base: #000000 !important;
+    --bg-card: #121212 !important;
+    --text-main: #ffffff !important;
+    --text-muted: #ffff88 !important;
+    --border-color: #ffff00 !important;
+    --primary: #ffff00 !important;
+    --primary-light: #222200 !important;
+}
+
+html.high-contrast .card,
+html.high-contrast .platform-header,
+html.high-contrast .portal-nav {
+    border: 2px solid #ffff00 !important;
+}
+
+/* Reduced Motion */
+html.reduced-motion * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-base);
+    color: var(--text-main);
+    line-height: 1.5;
+    min-height: 100vh;
+    padding-bottom: 50px;
+}
+
+.portal-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Header & Shared Nav */
+.platform-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 18px 24px;
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-soft);
+    margin-top: 20px;
+    margin-bottom: 12px;
+}
+
+.brand-group {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.brand-avatar-mini {
+    font-size: 32px;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--primary-light);
+    border-radius: 50%;
+}
+
+.brand-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--primary-dark);
+}
+
+.brand-subtitle {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.role-selector-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--primary-light);
+    padding: 6px 14px;
+    border-radius: 30px;
+}
+
+.role-select {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-weight: 600;
+    font-size: 0.9rem;
+    background: white;
+    cursor: pointer;
+}
+
+.portal-nav {
+    display: flex;
+    gap: 10px;
+    background: var(--bg-card);
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-soft);
+    margin-bottom: 14px;
+    overflow-x: auto;
+}
+
+.portal-nav .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    text-decoration: none;
+    color: var(--text-main);
+    font-weight: 500;
+    border-radius: 8px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.portal-nav .nav-item:hover {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+}
+
+.portal-nav .nav-item.active {
+    background: var(--primary);
+    color: #ffffff;
+    font-weight: 600;
+}
+
+/* Accessibility Toolbar */
+.accessibility-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #eef2f7;
+    padding: 8px 16px;
+    border-radius: var(--radius-md);
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+}
+
+.a11y-label {
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.a11y-btn {
+    padding: 5px 12px;
+    border: 1px solid var(--border-color);
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.a11y-btn:hover {
+    background: #e2e8f0;
+}
+
+.a11y-btn.active {
+    background: var(--primary-dark);
+    color: white;
+}
+
+/* Grid Layout */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+@media (max-width: 860px) {
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-soft);
+    border: 1px solid var(--border-color);
+    margin-bottom: 20px;
+}
+
+.card-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Avatar Card */
+.avatar-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    background: linear-gradient(180deg, #ffffff 0%, var(--primary-light) 100%);
+}
+
+#sarah-canvas {
+    border-radius: 20px;
+    background: transparent;
+    max-width: 100%;
+}
+
+.caption-bubble {
+    background: #2c3e50;
+    color: #ffffff;
+    padding: 12px 18px;
+    border-radius: 12px;
+    margin-top: 14px;
+    max-width: 90%;
+    font-size: 1rem;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Large Accessible Controls for Residents */
+.large-action-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.large-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 12px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+    transition: transform 0.15s, box-shadow 0.15s;
+    color: white;
+}
+
+.large-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.12);
+}
+
+.large-btn .btn-icon {
+    font-size: 2.2rem;
+    margin-bottom: 8px;
+}
+
+.btn-primary { background: #3498db; }
+.btn-success { background: #2ecc71; }
+.btn-warning { background: #f39c12; }
+.btn-danger { background: #e74c3c; }
+.btn-purple { background: #9b59b6; }
+.btn-teal { background: #1abc9c; }
+
+/* Routine / Timeline Items */
+.timeline-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.timeline-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: var(--bg-base);
+    border-radius: var(--radius-md);
+    border-left: 5px solid var(--primary);
+}
+
+.timeline-item.medication {
+    border-left-color: var(--secondary);
+}
+
+.timeline-item.urgent {
+    border-left-color: var(--danger);
+}
+
+.item-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.item-title {
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.item-sub {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* Badges */
+.status-pill {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.pill-green { background: #d4edda; color: #155724; }
+.pill-amber { background: #fff3cd; color: #856404; }
+.pill-red { background: #f8d7da; color: #721c24; }
+.pill-blue { background: #cce5ff; color: #004085; }
+
+/* Forms & Inputs */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.form-input, .form-textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.95rem;
+}
+
+.form-textarea {
+    min-height: 80px;
+    resize: vertical;
+}
+
+.submit-btn {
+    background: var(--primary);
+    color: white;
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.submit-btn:hover {
+    background: var(--primary-dark);
+}

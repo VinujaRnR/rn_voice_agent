@@ -40,30 +40,34 @@ async def generate_speech(
 
     selected_voice = FEMALE_VOICES.get((voice or "jenny").lower().strip(), DEFAULT_FEMALE_VOICE)
 
-    try:
-        import edge_tts
-        communicate = edge_tts.Communicate(clean_text, selected_voice)
-        audio_buffer = io.BytesIO()
+    max_attempts = 2
+    last_err = None
+    for attempt in range(max_attempts):
+        try:
+            import edge_tts
+            communicate = edge_tts.Communicate(clean_text, selected_voice)
+            audio_buffer = io.BytesIO()
 
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_buffer.write(chunk["data"])
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_buffer.write(chunk["data"])
 
-        audio_bytes = audio_buffer.getvalue()
-        if not audio_bytes:
-            raise HTTPException(status_code=500, detail="TTS engine produced empty audio stream.")
+            audio_bytes = audio_buffer.getvalue()
+            if audio_bytes:
+                return Response(
+                    content=audio_bytes,
+                    media_type="audio/mpeg",
+                    headers={
+                        "Cache-Control": "public, max-age=3600",
+                        "Content-Disposition": "inline; filename=\"sarah_speech.mp3\""
+                    }
+                )
+        except Exception as e:
+            last_err = e
+            logger.warning(f"TTS attempt {attempt + 1} error: {e}")
 
-        return Response(
-            content=audio_bytes,
-            media_type="audio/mpeg",
-            headers={
-                "Cache-Control": "public, max-age=3600",
-                "Content-Disposition": "inline; filename=\"sarah_speech.mp3\""
-            }
-        )
-    except Exception as e:
-        logger.error(f"TTS synthesis error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to synthesize female speech: {str(e)}")
+    logger.error(f"TTS synthesis failed after {max_attempts} attempts: {last_err}", exc_info=True)
+    raise HTTPException(status_code=500, detail=f"Failed to synthesize female speech: {str(last_err)}")
 
 
 @router.get("/voices")

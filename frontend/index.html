@@ -53,10 +53,22 @@
 
     <!-- Navigation Bar -->
     <nav class="nav-bar">
-      <a href="index.html" class="nav-link active">
-        <span>🎙️ Voice Assistant</span>
+      <a href="/resident/index.html" class="nav-link">
+        <span>🏡 Resident Dashboard</span>
       </a>
-      <a href="devices.html" class="nav-link">
+      <a href="/family/index.html" class="nav-link">
+        <span>👨‍👩‍👧 Family Portal</span>
+      </a>
+      <a href="/caregiver/index.html" class="nav-link">
+        <span>🩺 Caregiver View</span>
+      </a>
+      <a href="/admin/index.html" class="nav-link">
+        <span>⚙️ Admin Console</span>
+      </a>
+      <a href="/index.html" class="nav-link active">
+        <span>🎙️ Voice Dev Mode</span>
+      </a>
+      <a href="/devices.html" class="nav-link">
         <span>🌐 Devices & Nodes Table</span>
         <span class="nav-badge" id="nav-badge-count">8 Devices</span>
       </a>
@@ -113,8 +125,25 @@
         <button type="button" id="reminder-banner-close" class="reminder-banner-dismiss">Dismiss</button>
       </div>
 
+      <!-- Music Playback Mini Player -->
+      <div id="sarah-music-bar" class="music-player-bar" style="display: none;">
+        <div class="music-info">
+          <span class="music-disc-anim">🎵</span>
+          <div class="music-text">
+            <span id="music-title" class="music-title">Can't Help Falling in Love</span>
+            <span id="music-status" class="music-status">Playing...</span>
+          </div>
+        </div>
+        <div class="music-controls">
+          <button type="button" id="music-play-btn" class="music-btn" title="Pause / Resume" aria-label="Pause or Resume">⏸️</button>
+          <button type="button" id="music-stop-btn" class="music-btn" title="Stop" aria-label="Stop Music">⏹️</button>
+        </div>
+        <audio id="sarah-audio-player" preload="auto"></audio>
+      </div>
+
       <!-- Quick Action Chips -->
       <div class="quick-chips">
+        <button type="button" class="chip" data-cmd="Sarah, play a song">🎵 Play Music</button>
         <button type="button" class="chip" data-cmd="Sarah, what is the weather?">🌦️ Weather</button>
         <button type="button" class="chip" data-cmd="Sarah, what time is it?">⏰ Time</button>
         <button type="button" class="chip" data-cmd="Sarah, remind me to check the oven in 5 minutes">⏰ Remind me in 5m</button>

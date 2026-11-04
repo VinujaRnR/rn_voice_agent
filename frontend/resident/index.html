@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sarah — Resident Care Dashboard</title>
+    <link rel="stylesheet" href="/shared/portal.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="portal-container">
+        <!-- Shared Header & Nav -->
+        <div id="shared-nav"></div>
+
+        <div class="dashboard-grid">
+            <!-- Left: Sarah Avatar & Voice Interaction -->
+            <div class="card avatar-card">
+                <canvas id="sarah-canvas" width="280" height="280" aria-label="Sarah Animated Female Avatar"></canvas>
+                <div class="caption-bubble" id="caption-box" role="status" aria-live="polite">
+                    "Hello Margaret, I'm Sarah. How can I help you today?"
+                </div>
+
+                <div style="margin-top: 18px; display: flex; gap: 12px; width: 100%;">
+                    <button class="large-btn btn-primary" id="btn-listen" style="flex: 1;" aria-label="Speak to Sarah">
+                        <span class="btn-icon">🎙️</span>
+                        <span>Talk to Sarah</span>
+                    </button>
+                    <button class="large-btn btn-danger" id="btn-emergency" style="flex: 1;" aria-label="Call Emergency Help">
+                        <span class="btn-icon">🚨</span>
+                        <span>Quick Help</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right: Large Easy Controls -->
+            <div class="card">
+                <h2 class="card-title"><span>⚡</span> Quick Touch Controls</h2>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 12px;">
+                    Tap any button or say the command out loud to Sarah.
+                </p>
+
+                <div class="large-action-grid">
+                    <button class="large-btn btn-success" id="act-light-on" aria-label="Turn on Bedroom Light">
+                        <span class="btn-icon">💡</span>
+                        <span>Light On</span>
+                    </button>
+                    <button class="large-btn btn-warning" id="act-light-off" aria-label="Turn off Bedroom Light">
+                        <span class="btn-icon">🌙</span>
+                        <span>Light Off</span>
+                    </button>
+                    <button class="large-btn btn-purple" id="act-music" aria-label="Play Relaxing Music">
+                        <span class="btn-icon">🎵</span>
+                        <span>Play Music</span>
+                    </button>
+                    <button class="large-btn btn-teal" id="act-daughter" aria-label="Send Message to Daughter Emma">
+                        <span class="btn-icon">👨‍👩‍👧</span>
+                        <span>Message Emma</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Grid: Today's Routine, Medications & Household Devices -->
+        <div class="dashboard-grid">
+            <!-- Today's Routine & Reminders -->
+            <div class="card">
+                <h2 class="card-title"><span>📅</span> Today's Schedule & Medications</h2>
+                <ul class="timeline-list" id="routine-list">
+                    <li class="timeline-item medication">
+                        <div class="item-info">
+                            <span class="item-title">💊 Morning Heart Medication</span>
+                            <span class="item-sub">8:00 AM — Metoprolol 25mg with breakfast</span>
+                        </div>
+                        <span class="status-pill pill-amber" id="med-status">Scheduled</span>
+                    </li>
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">🍵 Morning Tea with Sarah</span>
+                            <span class="item-sub">10:30 AM — Living Room</span>
+                        </div>
+                        <span class="status-pill pill-blue">Daily Routine</span>
+                    </li>
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">📞 Daughter Emma Call</span>
+                            <span class="item-sub">4:00 PM — Family Catchup</span>
+                        </div>
+                        <span class="status-pill pill-green">Upcoming</span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Home Devices & Safety Sensor Overview -->
+            <div class="card">
+                <h2 class="card-title"><span>🏠</span> Home Devices & Safety Radar</h2>
+                <ul class="timeline-list" id="devices-list">
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">💡 Smart Light (Testing Farm Light)</span>
+                            <span class="item-sub">Node 98a316e6b658 • Relay 1</span>
+                        </div>
+                        <span class="status-pill pill-green" id="light-badge">Online</span>
+                    </li>
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">📡 Safety Radar (Living Room)</span>
+                            <span class="item-sub">Fall detection & activity monitoring</span>
+                        </div>
+                        <span class="status-pill pill-green">Normal Activity</span>
+                    </li>
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">☀️ Melbourne Weather Alert</span>
+                            <span class="item-sub">22°C Partly Cloudy • No severe weather</span>
+                        </div>
+                        <span class="status-pill pill-blue">Clear</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/avatar/sarah_avatar.js"></script>
+    <script src="/services/api.js"></script>
+    <script src="/components/accessibility.js"></script>
+    <script src="/shared/nav.js"></script>
+    <script src="resident.js"></script>
+</body>
+</html>

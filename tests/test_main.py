@@ -51,7 +51,11 @@ async def test_api_chat_device_command_flow():
     with patch(
         "app.api.chat.gemini_client.generate_response",
         new_callable=AsyncMock
-    ) as mock_gemini:
+    ) as mock_gemini, patch(
+        "app.rabbitmq.publisher.publisher.publish",
+        new_callable=AsyncMock
+    ) as mock_pub:
+        mock_pub.return_value = True
         mock_gemini.return_value = GeminiResponse(
             mode="device_command",
             speech=None,

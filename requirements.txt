@@ -11,3 +11,12 @@ faster-whisper
 av<14,>=11
 python-multipart
 edge-tts
+sqlalchemy[asyncio]>=2.0.0
+greenlet>=3.0.0
+alembic>=1.13.0
+asyncmy>=0.2.9
+aiomysql>=0.2.0
+aiosqlite>=0.20.0
+cryptography>=42.0.0
+pyjwt>=2.8.0
+bcrypt>=4.0.0

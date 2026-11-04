@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sarah — Family Portal</title>
+    <link rel="stylesheet" href="/shared/portal.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="portal-container">
+        <!-- Shared Header & Nav -->
+        <div id="shared-nav"></div>
+
+        <div class="dashboard-grid">
+            <!-- Left: Send Message / Note to Resident -->
+            <div class="card">
+                <h2 class="card-title"><span>💌</span> Send a Note to Sarah for Margaret</h2>
+                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px;">
+                    Sarah will gently read your message to Margaret during her next check-in or daily conversation.
+                </p>
+
+                <form id="family-msg-form">
+                    <div class="form-group">
+                        <label class="form-label" for="sender-name">Your Name & Relationship</label>
+                        <input class="form-input" id="sender-name" value="Emma (Daughter)" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="family-message">Message to Margaret</label>
+                        <textarea class="form-textarea" id="family-message" placeholder="e.g. Hi Mom, thinking of you! I will bring your favourite biscuits when I visit on Saturday at 2 PM."></textarea>
+                    </div>
+                    <button type="submit" class="submit-btn" id="btn-send-note">Send Note to Sarah</button>
+                    <span id="note-sent-feedback" style="display: none; margin-left: 12px; color: var(--success); font-weight: 600;">
+                        ✓ Message saved for Margaret!
+                    </span>
+                </form>
+            </div>
+
+            <!-- Right: Upcoming Birthdays & Milestones -->
+            <div class="card">
+                <h2 class="card-title"><span>🎂</span> Upcoming Family Birthdays & Milestones</h2>
+                <ul class="timeline-list" id="events-list">
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">Emma's Birthday (Daughter)</span>
+                            <span class="item-sub">November 15 • 38th Birthday</span>
+                        </div>
+                        <span class="status-pill pill-amber">In 11 Days</span>
+                    </li>
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">Lucas (Grandson)</span>
+                            <span class="item-sub">December 3 • 8th Birthday</span>
+                        </div>
+                        <span class="status-pill pill-blue">Upcoming</span>
+                    </li>
+                </ul>
+
+                <div style="margin-top: 16px;">
+                    <button class="a11y-btn" id="btn-add-birthday">+ Add Family Birthday</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <!-- Approved Family Contacts -->
+            <div class="card">
+                <h2 class="card-title"><span>👥</span> Approved Family Contacts</h2>
+                <ul class="timeline-list" id="contacts-list">
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">Emma Higgins</span>
+                            <span class="item-sub">Daughter • Primary Contact • +61 412 345 678</span>
+                        </div>
+                        <span class="status-pill pill-green">Primary</span>
+                    </li>
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">David Higgins</span>
+                            <span class="item-sub">Son • Emergency Contact • +61 498 765 432</span>
+                        </div>
+                        <span class="status-pill pill-blue">Authorized</span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Notification & Alert Preferences -->
+            <div class="card">
+                <h2 class="card-title"><span>🔔</span> Notification Preferences</h2>
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" checked>
+                        <span>SMS on medication reminder overdue (> 30 mins)</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" checked>
+                        <span>Immediate Call on Fall Detection / Safety Incident</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" checked>
+                        <span>Weekly Wellness & Conversation Summary</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/services/api.js"></script>
+    <script src="/components/accessibility.js"></script>
+    <script src="/shared/nav.js"></script>
+    <script src="family.js"></script>
+</body>
+</html>

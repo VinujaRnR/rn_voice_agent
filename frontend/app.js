@@ -122,6 +122,40 @@ class AssistantApp {
       });
     });
 
+    // Music mini player controls
+    const playBtn = document.getElementById('music-play-btn');
+    const stopBtn = document.getElementById('music-stop-btn');
+    if (playBtn) {
+      playBtn.addEventListener('click', () => {
+        if (!this.musicPlayer) {
+          this.musicPlayer = document.getElementById('sarah-audio-player');
+        }
+        if (this.musicPlayer) {
+          if (this.musicPlayer.paused) {
+            this.musicPlayer.play().catch(() => {});
+            playBtn.textContent = '⏸️';
+            const statusEl = document.getElementById('music-status');
+            if (statusEl) statusEl.textContent = 'Playing...';
+          } else {
+            this.musicPlayer.pause();
+            playBtn.textContent = '▶️';
+            const statusEl = document.getElementById('music-status');
+            if (statusEl) statusEl.textContent = 'Paused';
+          }
+        }
+      });
+    }
+    if (stopBtn) {
+      stopBtn.addEventListener('click', () => {
+        if (this.musicPlayer) {
+          this.musicPlayer.pause();
+          this.musicPlayer.currentTime = 0;
+        }
+        const bar = document.getElementById('sarah-music-bar');
+        if (bar) bar.style.display = 'none';
+      });
+    }
+
     // Populate device count badge in navigation bar
     fetch('/api/devices')
       .then(res => res.json())
@@ -575,9 +609,85 @@ class AssistantApp {
 
     // Normal Answer mode (Milestone 1 Pass Condition)
     this.appendMessage('Sarah', displayText || 'I understood your request.');
+    if (data.music) {
+      this.handleMusicPlayback(data.music);
+    }
     this.speakAssistantResponse(speechText || displayText, () => {
       this.returnToListeningOrReady();
     });
+  }
+
+  /**
+   * Handles audio streaming and controls for music playback
+   */
+  handleMusicPlayback(music) {
+    if (!music) return;
+    const action = music.action || 'play';
+    const track = music.track || "Can't Help Falling in Love by Elvis Presley";
+    const mediaUrl = music.media_url || '/audio/relaxing_music.wav';
+    const volume = music.volume !== undefined ? music.volume : 0.8;
+
+    if (!this.musicPlayer) {
+      this.musicPlayer = document.getElementById('sarah-audio-player') || new Audio();
+      this.musicPlayer.loop = true;
+    }
+
+    const musicBar = document.getElementById('sarah-music-bar');
+    const musicTitle = document.getElementById('music-title');
+    const musicStatus = document.getElementById('music-status');
+    const playBtn = document.getElementById('music-play-btn');
+
+    if (action === 'play' || action === 'resume' || action === 'next') {
+      if (musicTitle) musicTitle.textContent = track;
+      if (musicStatus) musicStatus.textContent = 'Playing...';
+      if (playBtn) playBtn.textContent = '⏸️';
+      if (musicBar) musicBar.style.display = 'flex';
+
+      try {
+        const fullMediaUrl = new URL(mediaUrl, window.location.href).href;
+        if (this.musicPlayer.src !== fullMediaUrl) {
+          this.musicPlayer.src = mediaUrl;
+        }
+      } catch (e) {
+        this.musicPlayer.src = mediaUrl;
+      }
+      this.musicPlayer.volume = Math.max(0.0, Math.min(1.0, volume));
+
+      const tryPlay = () => {
+        this.musicPlayer.play().catch(e => {
+          console.log('Audio autoplay prevented until user clicks UI:', e);
+        });
+      };
+
+      if (this.isTTSSpeaking) {
+        this.musicPlayer.volume = 0.2;
+        tryPlay();
+        const pollTTS = setInterval(() => {
+          if (!this.isTTSSpeaking) {
+            clearInterval(pollTTS);
+            if (this.musicPlayer) {
+              this.musicPlayer.volume = Math.max(0.0, Math.min(1.0, volume));
+            }
+          }
+        }, 300);
+      } else {
+        tryPlay();
+      }
+    } else if (action === 'pause') {
+      if (this.musicPlayer) this.musicPlayer.pause();
+      if (musicStatus) musicStatus.textContent = 'Paused';
+      if (playBtn) playBtn.textContent = '▶️';
+    } else if (action === 'stop') {
+      if (this.musicPlayer) {
+        this.musicPlayer.pause();
+        this.musicPlayer.currentTime = 0;
+      }
+      if (musicBar) musicBar.style.display = 'none';
+    } else if (action === 'volume') {
+      if (this.musicPlayer) {
+        this.musicPlayer.volume = Math.max(0.0, Math.min(1.0, volume));
+      }
+    }
   }
 
   /**

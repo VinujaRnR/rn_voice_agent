@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sarah — Caregiver & Clinical Dashboard</title>
+    <link rel="stylesheet" href="/shared/portal.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="portal-container">
+        <!-- Shared Header & Nav -->
+        <div id="shared-nav"></div>
+
+        <div class="dashboard-grid">
+            <!-- Left: Assigned Residents Overview -->
+            <div class="card">
+                <h2 class="card-title"><span>👵</span> Assigned Residents</h2>
+                <ul class="timeline-list">
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">Margaret Higgins (Room 102)</span>
+                            <span class="item-sub">Mild Cognitive Impairment • High Fall Risk • Heart Meds</span>
+                        </div>
+                        <span class="status-pill pill-green">Stable</span>
+                    </li>
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">Robert Chen (Room 105)</span>
+                            <span class="item-sub">Independent Mobility • Diabetes Type 2 • Daily Checkin</span>
+                        </div>
+                        <span class="status-pill pill-blue">Active</span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Right: Active Safety & Escalation Alerts -->
+            <div class="card">
+                <h2 class="card-title"><span>🚨</span> Safety Alerts & Escalations</h2>
+                <ul class="timeline-list" id="alerts-list">
+                    <li class="timeline-item urgent">
+                        <div class="item-info">
+                            <span class="item-title">Unconfirmed Medication Window</span>
+                            <span class="item-sub">Metoprolol 25mg scheduled for 8:00 AM • Dispenser not removed</span>
+                        </div>
+                        <button class="a11y-btn" id="btn-ack-escalation" style="background: var(--danger); color: white;">
+                            Acknowledge
+                        </button>
+                    </li>
+                    <li class="timeline-item">
+                        <div class="item-info">
+                            <span class="item-title">Radar Sensor Status (Living Room)</span>
+                            <span class="item-sub">No falls reported in the last 24 hours</span>
+                        </div>
+                        <span class="status-pill pill-green">Normal</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Medication Adherence Lifecycle Tracking -->
+        <div class="card">
+            <h2 class="card-title"><span>💊</span> Discrete Medication Adherence Checklist (Margaret Higgins)</h2>
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px;">
+                Strict prescription dosage without AI hallucination. Adherence stages: Reminded → Acknowledged → Dispenser Removed → Caregiver Confirmed.
+            </p>
+
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem;">
+                <thead>
+                    <tr style="border-bottom: 2px solid var(--border-color); background: var(--bg-base);">
+                        <th style="padding: 12px;">Medication & Dose</th>
+                        <th style="padding: 12px;">Time</th>
+                        <th style="padding: 12px;">Current Stage</th>
+                        <th style="padding: 12px;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="med-table-body">
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <td style="padding: 12px; font-weight: 600;">Metoprolol Tartrate (25mg)</td>
+                        <td style="padding: 12px;">08:00 AM</td>
+                        <td style="padding: 12px;"><span class="status-pill pill-amber" id="stage-badge-1">dispenser_removed</span></td>
+                        <td style="padding: 12px;">
+                            <button class="a11y-btn" id="btn-confirm-dose" style="background: var(--success); color: white;">
+                                ✓ Confirm Ingestion
+                            </button>
+                        </td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                        <td style="padding: 12px; font-weight: 600;">Vitamin D3 (1000 IU)</td>
+                        <td style="padding: 12px;">12:30 PM</td>
+                        <td style="padding: 12px;"><span class="status-pill pill-blue">reminded</span></td>
+                        <td style="padding: 12px;">
+                            <button class="a11y-btn" onclick="alert('Dispenser lid sensor triggers automatically or manual verification.')">
+                                Update
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="/services/api.js"></script>
+    <script src="/components/accessibility.js"></script>
+    <script src="/shared/nav.js"></script>
+    <script src="caregiver.js"></script>
+</body>
+</html>

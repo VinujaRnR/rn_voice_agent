@@ -13,3 +13,7 @@ __pycache__/
 node_modules/
 dist/
 build/
+*.db
+*.db-shm
+*.db-wal
+voice_assistant.db*

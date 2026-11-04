@@ -683,7 +683,7 @@ class ConversationStorage:
                 cursor = conn.execute("""
                     SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, recurrence
                     FROM reminders
-                    WHERE (session_id = ? OR session_id = 'default_session') AND status = 'pending' AND due_at_timestamp >= ?
+                    WHERE session_id = ? AND status = 'pending' AND due_at_timestamp >= ?
                     ORDER BY due_at_timestamp ASC;
                 """, (session_id, now_ts - 5))
             else:
@@ -702,7 +702,7 @@ class ConversationStorage:
                 cursor = conn.execute("""
                     SELECT id, session_id, text, due_at_timestamp, due_at_iso, delay_seconds, status, created_at, reminded_at, recurrence
                     FROM reminders
-                    WHERE (session_id = ? OR session_id = 'default_session') AND status IN ('completed', 'reminded', 'acknowledged', 'cancelled')
+                    WHERE session_id = ? AND status IN ('completed', 'reminded', 'acknowledged', 'cancelled')
                     ORDER BY rowid DESC LIMIT ?;
                 """, (session_id, limit))
             else:

@@ -134,6 +134,32 @@ class ReminderSpec(BaseModel):
     )
 
 
+class MusicPlaybackSpec(BaseModel):
+    """Structured music playback instruction and state."""
+    model_config = ConfigDict(extra="ignore")
+
+    action: str = Field(
+        default="play",
+        description="Playback action: play, pause, resume, stop, next, previous, volume"
+    )
+    track: Optional[str] = Field(
+        default=None,
+        description="Track title and artist name"
+    )
+    media_url: Optional[str] = Field(
+        default=None,
+        description="Streaming audio URL or local media endpoint"
+    )
+    volume: Optional[float] = Field(
+        default=0.8,
+        description="Volume level between 0.0 and 1.0"
+    )
+    status: Optional[str] = Field(
+        default="playing",
+        description="Playback status: playing, paused, stopped, volume_adjusted"
+    )
+
+
 class GeminiResponse(BaseModel):
     reasoning: Optional[str] = Field(
         default=None,
@@ -171,6 +197,10 @@ class GeminiResponse(BaseModel):
     reminder_already_executed: bool = Field(
         default=False,
         description="Whether the reminder action was already executed by tool agent"
+    )
+    music: Optional[MusicPlaybackSpec] = Field(
+        default=None,
+        description="Structured music playback command and track info"
     )
 
     @model_validator(mode="after")
