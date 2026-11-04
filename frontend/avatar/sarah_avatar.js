@@ -22,9 +22,17 @@ class SarahAvatar {
         
         this.animFrameId = null;
         this.time = 0;
+        this.audioVolume = 0.0;
         
         this._bindEvents();
         this.start();
+    }
+
+    setAudioVolume(vol) {
+        this.audioVolume = Math.max(0, Math.min(1.0, vol || 0));
+        if (this.state === 'speaking') {
+            this.mouthOpen = 0.15 + this.audioVolume * 0.85;
+        }
     }
 
     _bindEvents() {
@@ -235,8 +243,10 @@ class SarahAvatar {
         const mouthY = cy + radius * 0.48;
 
         if (this.state === 'speaking') {
-            // Oscillating mouth for natural speaking
-            if (!this.reducedMotion) {
+            // Natural speaking mouth oscillation or volume-driven viseme
+            if (this.audioVolume > 0.02) {
+                this.mouthOpen = Math.min(1.0, 0.15 + this.audioVolume * 1.8);
+            } else if (!this.reducedMotion) {
                 this.mouthOpen = 0.2 + (Math.sin(this.time * 16) * 0.5 + 0.5) * 0.7;
             } else {
                 this.mouthOpen = 0.5;

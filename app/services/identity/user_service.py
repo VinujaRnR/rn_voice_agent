@@ -20,7 +20,8 @@ class UserService:
         role: str = "resident",
         phone_number: Optional[str] = None,
         household_name: Optional[str] = None,
-        household_id: Optional[str] = None
+        household_id: Optional[str] = None,
+        seed_starter_devices: bool = False
     ) -> Tuple[User, Optional[Household]]:
         """Register a new user, hash password, and set up household."""
         repo = UserRepository(session)
@@ -53,13 +54,49 @@ class UserService:
                     role="member" if role != "admin" else "owner"
                 )
         elif household_name:
-            household = await repo.create_household(
-                name=household_name
-            )
+            household = await repo.create_household(name=household_name)
             await repo.add_household_member(
                 household_id=household.id,
                 user_id=user.id,
                 role="owner"
+            )
+        elif seed_starter_devices:
+            effective_hh_name = f"{(full_name or 'Resident')}'s Household"
+            household = await repo.create_household(name=effective_hh_name)
+            await repo.add_household_member(
+                household_id=household.id,
+                user_id=user.id,
+                role="owner"
+            )
+
+        if seed_starter_devices and household:
+            # Auto-seed starter household devices for new household
+            from app.database.repositories.device_repository import DeviceRepository
+            dev_repo = DeviceRepository(session)
+            await dev_repo.register_device(
+                name="Smart Light (Testing Farm Light)",
+                device_id=f"light_{household.id[:8]}",
+                node_id="98a316e6b658",
+                type="light",
+                household_id=household.id,
+                location="Testing Room",
+                connection_type="WiFi"
+            )
+            await dev_repo.register_device(
+                name="Living Room Lamp",
+                device_id=f"lamp_{household.id[:8]}",
+                type="light",
+                household_id=household.id,
+                location="Living Room",
+                connection_type="WiFi"
+            )
+            await dev_repo.register_device(
+                name="Safety Radar Sensor",
+                device_id=f"radar_{household.id[:8]}",
+                type="radar",
+                household_id=household.id,
+                location="Living Room",
+                connection_type="RN_Hub"
             )
 
         # Create default resident profile if role is resident
@@ -69,6 +106,30 @@ class UserService:
                 household_id=household.id if household else None,
                 preferred_name=full_name or email.split("@")[0]
             )
+
+            if seed_starter_devices:
+                # Auto-seed starter medication & contact
+                from app.database.repositories.care_repository import CareRepository
+                from app.database.repositories.family_repository import FamilyRepository
+                care_repo = CareRepository(session)
+                fam_repo = FamilyRepository(session)
+                await care_repo.create_medication_schedule(
+                    resident_id=user.id,
+                    medication_name="Morning Heart Medication (Metoprolol)",
+                    dosage="25mg with breakfast",
+                    scheduled_time="08:00",
+                    instructions="Take with breakfast and a glass of water",
+                    requires_food=True
+                )
+                await fam_repo.add_contact(
+                    resident_id=user.id,
+                    name="Emma Walker",
+                    relationship_type="daughter",
+                    phone_number="+61 400 123 456",
+                    email="emma@example.com",
+                    is_emergency_contact=True,
+                    can_receive_alerts=True
+                )
 
         # Initialize default preferences
         await repo.upsert_user_preferences(user_id=user.id)

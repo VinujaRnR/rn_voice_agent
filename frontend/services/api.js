@@ -2,35 +2,68 @@
  * Sarah Centralized API Client
  * Manages JWT tokens, multi-tenant session isolation, role authentication,
  * and service endpoints for Resident, Family, Caregiver, and Admin portals.
+ * Fully connected to MySQL database.
  */
 
 class ApiService {
     constructor() {
-        this.tokenKey = 'sarah_auth_token';
+        this.tokenKey = 'sarah_access_token';
+        this.fallbackTokenKey = 'sarah_auth_token';
         this.sessionKey = 'sarah_session_id';
         this.householdKey = 'sarah_household_id';
         this.roleKey = 'sarah_role';
         this.userKey = 'sarah_user_id';
+        this.userNameKey = 'sarah_user_name';
     }
 
     getToken() {
-        return localStorage.getItem(this.tokenKey) || '';
+        return localStorage.getItem(this.tokenKey) ||
+               localStorage.getItem(this.fallbackTokenKey) ||
+               localStorage.getItem('token') || '';
     }
 
-    setToken(token) {
+    setToken(token, userData = null) {
         if (token) {
             localStorage.setItem(this.tokenKey, token);
+            localStorage.setItem(this.fallbackTokenKey, token);
+            if (userData) {
+                if (userData.user_id || userData.id) localStorage.setItem(this.userKey, userData.user_id || userData.id);
+                if (userData.role) {
+                    localStorage.setItem(this.roleKey, userData.role);
+                    localStorage.setItem('sarah_user_role', userData.role);
+                }
+                if (userData.household_id) localStorage.setItem(this.householdKey, userData.household_id);
+                if (userData.full_name) localStorage.setItem(this.userNameKey, userData.full_name);
+            }
             try {
                 const payload = JSON.parse(atob(token.split('.')[1]));
-                if (payload.role) localStorage.setItem(this.roleKey, payload.role);
-                if (payload.sub) localStorage.setItem(this.userKey, payload.sub);
-                if (payload.household_id) localStorage.setItem(this.householdKey, payload.household_id);
+                if (payload.role) {
+                    localStorage.setItem(this.roleKey, payload.role);
+                    localStorage.setItem('sarah_user_role', payload.role);
+                }
+                if (payload.sub && !localStorage.getItem(this.userKey)) {
+                    localStorage.setItem(this.userKey, payload.sub);
+                }
+                if (payload.household_id) {
+                    localStorage.setItem(this.householdKey, payload.household_id);
+                }
             } catch (e) {
                 // Ignore parse errors
             }
         } else {
             localStorage.removeItem(this.tokenKey);
+            localStorage.removeItem(this.fallbackTokenKey);
+            localStorage.removeItem(this.userKey);
+            localStorage.removeItem(this.roleKey);
+            localStorage.removeItem('sarah_user_role');
+            localStorage.removeItem(this.householdKey);
+            localStorage.removeItem(this.userNameKey);
         }
+    }
+
+    logout() {
+        this.setToken(null);
+        window.location.href = '/auth/login.html';
     }
 
     getSessionId() {
@@ -43,31 +76,43 @@ class ApiService {
     }
 
     getRole() {
-        return localStorage.getItem(this.roleKey) || 'resident';
+        return localStorage.getItem(this.roleKey) || localStorage.getItem('sarah_user_role') || 'resident';
     }
 
     getHouseholdId() {
-        return localStorage.getItem(this.householdKey) || 'household_margaret';
+        return localStorage.getItem(this.householdKey) || '';
     }
 
     getUserId() {
-        return localStorage.getItem(this.userKey) || 'user_margaret';
+        return localStorage.getItem(this.userKey) || '';
     }
 
-    setContext(user, role, householdId) {
+    getUserName() {
+        return localStorage.getItem(this.userNameKey) || '';
+    }
+
+    setContext(user, role, householdId, name = null) {
         if (user) localStorage.setItem(this.userKey, user);
-        if (role) localStorage.setItem(this.roleKey, role);
+        if (role) {
+            localStorage.setItem(this.roleKey, role);
+            localStorage.setItem('sarah_user_role', role);
+        }
         if (householdId) localStorage.setItem(this.householdKey, householdId);
+        if (name) localStorage.setItem(this.userNameKey, name);
     }
 
     getHeaders(extra = {}) {
         const headers = {
             'Content-Type': 'application/json',
             'X-Session-ID': this.getSessionId(),
-            'X-Household-ID': this.getHouseholdId(),
-            'X-Resident-ID': this.getUserId(),
             ...extra
         };
+        const hid = this.getHouseholdId();
+        if (hid) headers['X-Household-ID'] = hid;
+
+        const uid = this.getUserId();
+        if (uid) headers['X-Resident-ID'] = uid;
+
         const token = this.getToken();
         if (token) {
             headers['Authorization'] = `Bearer ${token}`;
@@ -91,7 +136,34 @@ class ApiService {
         }
     }
 
-    // Voice Chat
+    // Authenticated Profile & Me
+    async getCurrentUser() {
+        const token = this.getToken();
+        if (!token) return null;
+        try {
+            const data = await this.request('/api/v1/auth/me');
+            if (data) {
+                if (data.user_id) localStorage.setItem(this.userKey, data.user_id);
+                if (data.role) {
+                    localStorage.setItem(this.roleKey, data.role);
+                    localStorage.setItem('sarah_user_role', data.role);
+                }
+                if (data.household_id) localStorage.setItem(this.householdKey, data.household_id);
+                if (data.full_name) localStorage.setItem(this.userNameKey, data.full_name);
+            }
+            return data;
+        } catch (e) {
+            console.warn('Could not fetch current user profile:', e);
+            return null;
+        }
+    }
+
+    // WebSocket Ticket
+    async acquireWsTicket() {
+        return this.request('/api/v1/auth/ws-ticket', { method: 'POST' });
+    }
+
+    // Voice Chat HTTP fallback
     async sendChat(text) {
         return this.request('/api/chat', {
             method: 'POST',
@@ -104,9 +176,26 @@ class ApiService {
         });
     }
 
-    // Devices (Universal IoT)
-    async listDevices() {
-        return this.request('/api/v1/devices');
+    // Devices (Universal IoT from MySQL)
+    async listDevices(householdId = null) {
+        const hid = householdId || this.getHouseholdId();
+        const url = hid ? `/api/v1/devices?household_id=${encodeURIComponent(hid)}` : '/api/v1/devices';
+        return this.request(url);
+    }
+
+    async registerDevice(deviceData) {
+        return this.request('/api/v1/devices', {
+            method: 'POST',
+            body: JSON.stringify({
+                household_id: deviceData.household_id || this.getHouseholdId(),
+                name: deviceData.name,
+                device_id: deviceData.device_id,
+                device_type: deviceData.device_type || 'light',
+                location: deviceData.location || 'Living Room',
+                connection_type: deviceData.connection_type || 'WiFi',
+                capabilities: deviceData.capabilities || ['turn_on', 'turn_off', 'set_power']
+            })
+        });
     }
 
     async sendDeviceCommand(deviceId, action, parameters = {}) {
@@ -130,71 +219,71 @@ class ApiService {
         });
     }
 
-    // Family Portal (Step 11)
-    async getFamilyContacts() {
-        return this.request('/api/v1/family/contacts');
+    // Family Portal (from MySQL)
+    async getFamilyContacts(residentId = null) {
+        const rid = residentId || this.getUserId();
+        const url = rid ? `/api/v1/family/contacts?resident_id=${encodeURIComponent(rid)}` : '/api/v1/family/contacts';
+        return this.request(url);
     }
 
-    async getUpcomingEvents() {
-        return this.request('/api/v1/family/events');
+    async getUpcomingEvents(residentId = null) {
+        const rid = residentId || this.getUserId();
+        const url = rid ? `/api/v1/family/events?resident_id=${encodeURIComponent(rid)}` : '/api/v1/family/events';
+        return this.request(url);
     }
 
     async sendFamilyContactRequest(contactName, message) {
         return this.request('/api/v1/family/contact-requests', {
             method: 'POST',
             body: JSON.stringify({
-                contact_name: contactName,
-                message: message
+                contact_name_or_id: contactName,
+                custom_message: message
             })
         });
     }
 
-    // Caregiver Portal (Step 12)
-    async getCarePlan() {
-        return this.request('/api/v1/care/care-plan');
+    // Caregiver & Medications (from MySQL)
+    async getCarePlan(residentId = null) {
+        const rid = residentId || this.getUserId();
+        if (!rid) return { routine_details: {} };
+        return this.request(`/api/v1/care/residents/${encodeURIComponent(rid)}/plan`);
     }
 
-    async getMedicationSchedule() {
-        return this.request('/api/v1/care/medications/schedule');
+    async getMedications(residentId = null) {
+        const rid = residentId || this.getUserId();
+        if (!rid) return [];
+        return this.request(`/api/v1/care/residents/${encodeURIComponent(rid)}/medications`);
     }
 
-    async updateMedicationStage(scheduleId, stage) {
-        return this.request(`/api/v1/care/medications/${scheduleId}/stage`, {
+    async createMedication(residentId, medData) {
+        return this.request(`/api/v1/care/residents/${encodeURIComponent(residentId)}/medications`, {
             method: 'POST',
-            body: JSON.stringify({ stage: stage })
+            body: JSON.stringify(medData)
         });
     }
 
-    // Safety Radar & Alerts (Step 13)
-    async getSafetyIncidents() {
-        return this.request('/api/v1/safety/incidents');
+    async recordMedicationAdherence(medicationId, eventType, notes = null) {
+        return this.request(`/api/v1/care/medications/${encodeURIComponent(medicationId)}/events`, {
+            method: 'POST',
+            body: JSON.stringify({
+                event_type: eventType,
+                notes: notes
+            })
+        });
     }
 
-    async getExternalAlerts(postcode = '3000') {
-        return this.request(`/api/v1/safety/alerts?postcode=${postcode}`);
-    }
-
-    // Music & Entertainment (Step 15)
-    async getPlaylists() {
-        return this.request('/api/v1/entertainment/playlists');
-    }
-
-    async controlMusic(action, query = '', volume = 75) {
-        return this.request('/api/v1/entertainment/control', {
+    // Music & Entertainment
+    async controlMusic(action = 'play', query = null, volume = 75) {
+        return this.request('/api/v1/entertainment/music/control', {
             method: 'POST',
             body: JSON.stringify({
                 action: action,
                 query: query,
-                volume_level: volume
+                volume: volume
             })
         });
     }
 }
 
-// Global instance
-const api = new ApiService();
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { api, ApiService };
-} else {
-    window.api = api;
-}
+// Global Singleton
+window.api = new ApiService();

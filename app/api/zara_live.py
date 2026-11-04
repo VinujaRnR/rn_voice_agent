@@ -18,22 +18,24 @@ from app.security.auth import validate_ws_ticket
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["Zara Live BIDI"])
+router = APIRouter(tags=["Sarah Live BIDI"])
 
-ZARA_LIVE_SYSTEM_INSTRUCTION = """You are Zara, an intelligent, empathetic live voice AI developed by RN Robots.
+SARAH_LIVE_SYSTEM_INSTRUCTION = """You are Sarah, an intelligent, empathetic live voice AI elderly care companion developed by RN Robots.
 You communicate naturally with human-like conversation through real-time bidirectional audio.
 You have native audio understanding and voice generation with prebuilt voice Aoede.
 You support automatic language detection: identify whatever language the user speaks (English, Sinhala, Tamil, Spanish, French, Japanese, Mandarin, etc.) and seamlessly respond in the same language.
-Keep responses concise, conversational, friendly, and natural (1 to 2 sentences), ideal for real-time speech.
-You can help with elderly care, companion conversation, health routines, smart devices, and daily questions."""
+Keep responses concise, conversational, friendly, warm, and natural (1 to 2 sentences), ideal for real-time speech.
+You help the resident with elderly care, companion conversation, health routines, smart devices, playing music, and daily questions."""
+
+ZARA_LIVE_SYSTEM_INSTRUCTION = SARAH_LIVE_SYSTEM_INSTRUCTION
 
 
 def build_zara_agent(model_name: str) -> Agent:
-    """Build Google ADK Agent configured for Zara live persona."""
+    """Build Google ADK Agent configured for Sarah live persona."""
     return Agent(
-        name="zara_live_agent",
+        name="sarah_live_agent",
         model=model_name,
-        instruction=ZARA_LIVE_SYSTEM_INSTRUCTION
+        instruction=SARAH_LIVE_SYSTEM_INSTRUCTION
     )
 
 
@@ -50,6 +52,7 @@ def build_run_config() -> RunConfig:
     )
 
 
+@router.websocket("/api/v1/sarah-live/ws")
 @router.websocket("/api/v1/zara-live/ws")
 async def zara_live_websocket(
     websocket: WebSocket,

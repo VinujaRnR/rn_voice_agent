@@ -1,4 +1,4 @@
-// Authentication logic for Sarah & Zara Platform
+// Authentication logic for Sarah Multi-User Platform
 document.addEventListener('DOMContentLoaded', () => {
   const loginForm = document.getElementById('login-form');
   const registerForm = document.getElementById('register-form');
@@ -19,13 +19,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleRedirect(role) {
     const roleRoutes = {
-      'resident': '/resident/',
-      'caregiver': '/caregiver/',
-      'family_member': '/family/',
-      'facility_admin': '/admin/'
+      'resident': '/resident/index.html',
+      'caregiver': '/caregiver/index.html',
+      'family': '/family/index.html',
+      'family_member': '/family/index.html',
+      'admin': '/admin/index.html',
+      'facility_admin': '/admin/index.html'
     };
-    const target = roleRoutes[role] || '/';
+    const target = roleRoutes[role] || '/resident/index.html';
     window.location.href = target;
+  }
+
+  function saveAuthSession(data, fallbackName = null) {
+    if (data.access_token) {
+      localStorage.setItem('sarah_access_token', data.access_token);
+      localStorage.setItem('sarah_auth_token', data.access_token);
+    }
+    if (data.refresh_token) {
+      localStorage.setItem('sarah_refresh_token', data.refresh_token);
+    }
+    if (data.user_id) {
+      localStorage.setItem('sarah_user_id', data.user_id);
+    }
+    if (data.role) {
+      localStorage.setItem('sarah_role', data.role);
+      localStorage.setItem('sarah_user_role', data.role);
+    }
+    if (data.household_id) {
+      localStorage.setItem('sarah_household_id', data.household_id);
+    }
+    if (fallbackName) {
+      localStorage.setItem('sarah_user_name', fallbackName);
+    }
   }
 
   // Handle Login
@@ -45,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       submitBtn.disabled = true;
-      btnText.textContent = 'Authenticating...';
+      btnText.textContent = 'Authenticating with MySQL...';
 
       try {
         const response = await fetch('/api/v1/auth/login', {
@@ -60,19 +85,28 @@ document.addEventListener('DOMContentLoaded', () => {
           throw new Error(data.detail || 'Login failed. Please check your credentials.');
         }
 
-        // Store tokens
-        localStorage.setItem('sarah_access_token', data.access_token);
-        if (data.refresh_token) {
-          localStorage.setItem('sarah_refresh_token', data.refresh_token);
-        }
-        localStorage.setItem('sarah_user_id', data.user_id);
-        localStorage.setItem('sarah_user_role', data.role);
-        if (data.household_id) {
-          localStorage.setItem('sarah_household_id', data.household_id);
+        // Store tokens & credentials
+        saveAuthSession(data);
+
+        // Fetch user profile from MySQL to get user's full name & household name
+        try {
+          const meRes = await fetch('/api/v1/auth/me', {
+            headers: { 'Authorization': `Bearer ${data.access_token}` }
+          });
+          if (meRes.ok) {
+            const meData = await meRes.json();
+            if (meData.full_name) localStorage.setItem('sarah_user_name', meData.full_name);
+            if (meData.household_id) localStorage.setItem('sarah_household_id', meData.household_id);
+            if (meData.households && meData.households.length > 0) {
+              localStorage.setItem('sarah_household_name', meData.households[0].name);
+            }
+          }
+        } catch (meErr) {
+          console.debug('Could not preload me:', meErr);
         }
 
         showAlert('Login successful! Redirecting to your dashboard...', 'success');
-        setTimeout(() => handleRedirect(data.role), 800);
+        setTimeout(() => handleRedirect(data.role), 600);
       } catch (err) {
         showAlert(err.message);
       } finally {
@@ -108,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       submitBtn.disabled = true;
-      btnText.textContent = 'Creating account...';
+      btnText.textContent = 'Creating account in MySQL...';
 
       try {
         const response = await fetch('/api/v1/auth/register', {
@@ -126,22 +160,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.detail || 'Registration failed.');
+          throw new Error(data.detail || 'Registration failed. Please try again.');
         }
 
-        // Store tokens
-        localStorage.setItem('sarah_access_token', data.access_token);
-        if (data.refresh_token) {
-          localStorage.setItem('sarah_refresh_token', data.refresh_token);
-        }
-        localStorage.setItem('sarah_user_id', data.user_id);
-        localStorage.setItem('sarah_user_role', data.role);
-        if (data.household_id) {
-          localStorage.setItem('sarah_household_id', data.household_id);
+        // Store tokens & credentials
+        saveAuthSession(data, fullName);
+        if (householdName) {
+          localStorage.setItem('sarah_household_name', householdName);
         }
 
-        showAlert('Account created! Welcome to Sarah & Zara Platform.', 'success');
-        setTimeout(() => handleRedirect(data.role), 1000);
+        showAlert('Account created successfully in MySQL! Redirecting...', 'success');
+        setTimeout(() => handleRedirect(data.role), 600);
       } catch (err) {
         showAlert(err.message);
       } finally {
@@ -151,4 +180,3 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
-

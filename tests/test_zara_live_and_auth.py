@@ -67,7 +67,7 @@ def test_api_ws_ticket_endpoint(client):
     data = res.json()
     assert "ticket" in data
     assert data["expires_in"] == settings.zara_live_ws_ticket_expire_seconds
-    assert data["ws_endpoint"] == "/api/v1/zara-live/ws"
+    assert data["ws_endpoint"] in ("/api/v1/sarah-live/ws", "/api/v1/zara-live/ws")
     assert "user_id" in data
     assert data["role"] == "guest"
 
@@ -151,4 +151,25 @@ def test_zara_live_websocket_connection_and_handshake(client):
         # 4. Test sending 16 kHz PCM chunk
         pcm16_chunk = b"\x00" * 3200  # 100ms of 16-bit 16kHz silence
         ws.send_bytes(pcm16_chunk)
+
+
+def test_sarah_live_websocket_connection_and_handshake(client):
+    """Verify primary /api/v1/sarah-live/ws endpoint handshakes with Aoede voice & BIDI mode."""
+    t_res = client.post("/api/v1/auth/ws-ticket")
+    ticket = t_res.json()["ticket"]
+    assert t_res.json()["ws_endpoint"] == "/api/v1/sarah-live/ws"
+
+    with client.websocket_connect(f"/api/v1/sarah-live/ws?ticket={ticket}") as ws:
+        status_msg = ws.receive_json()
+        assert status_msg["type"] == "status"
+        assert status_msg["state"] == "connected"
+        assert status_msg["voice"] == "Aoede"
+        assert status_msg["input_format"] == "audio/pcm;rate=16000"
+        assert status_msg["output_format"] == "audio/pcm;rate=24000"
+        assert status_msg["streaming_mode"] == "bidi"
+
+        ws.send_json({"type": "ping"})
+        pong_msg = ws.receive_json()
+        assert pong_msg["type"] == "pong"
+
 

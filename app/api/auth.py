@@ -39,7 +39,8 @@ async def register(
             role=payload.role,
             phone_number=payload.phone_number,
             household_name=payload.household_name,
-            household_id=payload.household_id
+            household_id=payload.household_id,
+            seed_starter_devices=True
         )
         token_data = await UserService.generate_user_tokens(
             session=session,
@@ -144,7 +145,7 @@ class WsTicketResponse(BaseModel):
     expires_in: int
     user_id: str
     role: str
-    ws_endpoint: str = "/api/v1/zara-live/ws"
+    ws_endpoint: str = "/api/v1/sarah-live/ws"
 
 
 @router.post("/ws-ticket", response_model=WsTicketResponse)
@@ -181,6 +182,6 @@ async def generate_websocket_ticket(
         expires_in=settings.zara_live_ws_ticket_expire_seconds,
         user_id=user_id,
         role=role,
-        ws_endpoint="/api/v1/zara-live/ws"
+        ws_endpoint="/api/v1/sarah-live/ws"
     )
 

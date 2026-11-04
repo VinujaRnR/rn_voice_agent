@@ -11,111 +11,100 @@
 </head>
 <body>
     <div class="portal-container">
-        <!-- Shared Header & Nav -->
+        <!-- Shared Header & 5-item Nav -->
         <div id="shared-nav"></div>
 
-        <div class="dashboard-grid">
-            <!-- Left: Sarah Avatar & Voice Interaction -->
-            <div class="card avatar-card">
-                <canvas id="sarah-canvas" width="280" height="280" aria-label="Sarah Animated Female Avatar"></canvas>
-                <div class="caption-bubble" id="caption-box" role="status" aria-live="polite">
-                    "Hello Margaret, I'm Sarah. How can I help you today?"
+        <!-- Resident Welcome Banner (Dynamic from MySQL) -->
+        <div class="resident-welcome-card" id="resident-welcome-banner" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 20px 26px; border-radius: var(--radius-lg); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-soft);">
+            <div>
+                <h1 id="resident-greeting-name" style="font-size: 1.6rem; font-weight: 700; margin: 0;">Welcome to Sarah AI</h1>
+                <p id="resident-sub-info" style="opacity: 0.92; font-size: 0.95rem; margin-top: 4px;">Loading your profile from MySQL database...</p>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span class="status-pill" id="db-sync-badge" style="background: rgba(255,255,255,0.22); color: white; border: 1px solid rgba(255,255,255,0.35); font-weight: 600;">
+                    🟢 MySQL Database Connected
+                </span>
+            </div>
+        </div>
+
+        <!-- Main Live Voice Assistant Section with Woman Talking Animation -->
+        <div class="dashboard-grid" style="grid-template-columns: 360px 1fr; gap: 20px;">
+            <!-- Left: Sarah Woman Talking Animated Avatar & Live Voice Controls -->
+            <div class="card avatar-card" style="display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px;">
+                <canvas id="sarah-canvas" width="300" height="300" aria-label="Sarah Animated Female Voice AI" style="max-width: 100%; height: auto; border-radius: 50%; box-shadow: 0 4px 16px rgba(0,0,0,0.08);"></canvas>
+                
+                <div class="caption-bubble" id="caption-box" role="status" aria-live="polite" style="width: 100%; margin-top: 14px; min-height: 48px; font-size: 0.95rem; line-height: 1.4;">
+                    "Hello! I'm Sarah, your personal voice companion. Click 'Talk to Sarah' to start speaking."
                 </div>
 
-                <div style="margin-top: 18px; display: flex; gap: 12px; width: 100%;">
-                    <button class="large-btn btn-primary" id="btn-listen" style="flex: 1;" aria-label="Speak to Sarah">
-                        <span class="btn-icon">🎙️</span>
-                        <span>Talk to Sarah</span>
-                    </button>
-                    <button class="large-btn btn-danger" id="btn-emergency" style="flex: 1;" aria-label="Call Emergency Help">
+                <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 10px; width: 100%;">
+                    <div style="display: flex; gap: 10px; width: 100%;">
+                        <button class="large-btn btn-primary" id="btn-toggle-voice" style="flex: 2;" aria-label="Start or Stop Live Voice Conversation with Sarah">
+                            <span class="btn-icon" id="voice-btn-icon">🎙️</span>
+                            <span id="voice-btn-text">Talk to Sarah</span>
+                        </button>
+                        <button class="large-btn btn-warning" id="btn-bargein" style="flex: 1;" aria-label="Interrupt Sarah">
+                            <span class="btn-icon">✋</span>
+                            <span>Interrupt</span>
+                        </button>
+                    </div>
+
+                    <button class="large-btn btn-danger" id="btn-emergency" style="width: 100%;" aria-label="Call Emergency Help">
                         <span class="btn-icon">🚨</span>
-                        <span>Quick Help</span>
+                        <span>Emergency Assistance</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Right: Large Easy Controls -->
-            <div class="card">
-                <h2 class="card-title"><span>⚡</span> Quick Touch Controls</h2>
-                <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 12px;">
-                    Tap any button or say the command out loud to Sarah.
-                </p>
+            <!-- Right: Real-Time Live Dual Transcription & Conversation Log -->
+            <div class="card" style="display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <h2 class="card-title" style="margin-bottom: 0;"><span>💬</span> Live Voice Conversation</h2>
+                        <span class="status-pill pill-blue" id="live-voice-state">Standby</span>
+                    </div>
+                    
+                    <div class="live-conversation-container" id="conversation-container" style="min-height: 250px; max-height: 330px; overflow-y: auto; background: var(--bg-base); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px; display: flex; flex-direction: column; gap: 10px;">
+                        <div class="msg-box msg-agent" style="background: white; border: 1px solid var(--border-color); padding: 12px 16px; border-radius: 12px; border-left: 4px solid var(--primary);">
+                            <strong style="color: var(--primary); display: block; font-size: 0.85rem; margin-bottom: 4px;">Sarah (AI Companion):</strong>
+                            <span id="sarah-output-text">I'm ready whenever you'd like to chat, check your schedule, control your devices, or play music.</span>
+                        </div>
+                    </div>
+                </div>
 
-                <div class="large-action-grid">
-                    <button class="large-btn btn-success" id="act-light-on" aria-label="Turn on Bedroom Light">
-                        <span class="btn-icon">💡</span>
-                        <span>Light On</span>
-                    </button>
-                    <button class="large-btn btn-warning" id="act-light-off" aria-label="Turn off Bedroom Light">
-                        <span class="btn-icon">🌙</span>
-                        <span>Light Off</span>
-                    </button>
-                    <button class="large-btn btn-purple" id="act-music" aria-label="Play Relaxing Music">
-                        <span class="btn-icon">🎵</span>
-                        <span>Play Music</span>
-                    </button>
-                    <button class="large-btn btn-teal" id="act-daughter" aria-label="Send Message to Daughter Emma">
-                        <span class="btn-icon">👨‍👩‍👧</span>
-                        <span>Message Emma</span>
-                    </button>
+                <div style="margin-top: 14px; display: flex; gap: 8px;">
+                    <input type="text" id="manual-text-input" class="form-input" placeholder="Or type a question/command to Sarah..." style="flex: 1; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.95rem;" />
+                    <button id="manual-send-btn" class="a11y-btn" style="background: var(--primary); color: white; padding: 10px 18px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Send</button>
                 </div>
             </div>
         </div>
 
-        <!-- Bottom Grid: Today's Routine, Medications & Household Devices -->
-        <div class="dashboard-grid">
-            <!-- Today's Routine & Reminders -->
+        <!-- NOTICE: Quick Touch Controls buttons card is REMOVED completely as requested -->
+
+        <!-- Bottom Grid: Today's Routine, Medications & Household Devices (Dynamically Fetched from MySQL) -->
+        <div class="dashboard-grid" style="margin-top: 24px; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <!-- Today's Schedule & Medications from MySQL -->
             <div class="card">
-                <h2 class="card-title"><span>📅</span> Today's Schedule & Medications</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                    <h2 class="card-title" style="margin-bottom: 0;"><span>📅</span> Today's Schedule & Medications</h2>
+                    <span class="status-pill pill-green" id="med-count-badge">Loading...</span>
+                </div>
                 <ul class="timeline-list" id="routine-list">
-                    <li class="timeline-item medication">
-                        <div class="item-info">
-                            <span class="item-title">💊 Morning Heart Medication</span>
-                            <span class="item-sub">8:00 AM — Metoprolol 25mg with breakfast</span>
-                        </div>
-                        <span class="status-pill pill-amber" id="med-status">Scheduled</span>
-                    </li>
-                    <li class="timeline-item">
-                        <div class="item-info">
-                            <span class="item-title">🍵 Morning Tea with Sarah</span>
-                            <span class="item-sub">10:30 AM — Living Room</span>
-                        </div>
-                        <span class="status-pill pill-blue">Daily Routine</span>
-                    </li>
-                    <li class="timeline-item">
-                        <div class="item-info">
-                            <span class="item-title">📞 Daughter Emma Call</span>
-                            <span class="item-sub">4:00 PM — Family Catchup</span>
-                        </div>
-                        <span class="status-pill pill-green">Upcoming</span>
+                    <li class="timeline-item" style="color: var(--text-muted); font-size: 0.95rem;">
+                        Fetching schedule and prescriptions from MySQL database...
                     </li>
                 </ul>
             </div>
 
-            <!-- Home Devices & Safety Sensor Overview -->
+            <!-- Home Devices & Safety Sensors from MySQL -->
             <div class="card">
-                <h2 class="card-title"><span>🏠</span> Home Devices & Safety Radar</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                    <h2 class="card-title" style="margin-bottom: 0;"><span>🏠</span> Household Smart Devices</h2>
+                    <span class="status-pill pill-blue" id="device-count-badge">Loading...</span>
+                </div>
                 <ul class="timeline-list" id="devices-list">
-                    <li class="timeline-item">
-                        <div class="item-info">
-                            <span class="item-title">💡 Smart Light (Testing Farm Light)</span>
-                            <span class="item-sub">Node 98a316e6b658 • Relay 1</span>
-                        </div>
-                        <span class="status-pill pill-green" id="light-badge">Online</span>
-                    </li>
-                    <li class="timeline-item">
-                        <div class="item-info">
-                            <span class="item-title">📡 Safety Radar (Living Room)</span>
-                            <span class="item-sub">Fall detection & activity monitoring</span>
-                        </div>
-                        <span class="status-pill pill-green">Normal Activity</span>
-                    </li>
-                    <li class="timeline-item">
-                        <div class="item-info">
-                            <span class="item-title">☀️ Melbourne Weather Alert</span>
-                            <span class="item-sub">22°C Partly Cloudy • No severe weather</span>
-                        </div>
-                        <span class="status-pill pill-blue">Clear</span>
+                    <li class="timeline-item" style="color: var(--text-muted); font-size: 0.95rem;">
+                        Fetching registered IoT hardware devices from MySQL database...
                     </li>
                 </ul>
             </div>

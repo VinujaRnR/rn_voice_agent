@@ -1,34 +1,64 @@
 /**
  * Shared Role Navigation & Header for Sarah Platform
+ * Contains exactly 5 pages:
+ * 🏡 Resident Dashboard
+ * 👨‍👩‍👧 Family Portal
+ * 🩺 Caregiver View
+ * ⚙️ Admin Console
+ * 🔐 Log In (or 🚪 Log Out when authenticated)
+ * Fully connected to MySQL database.
  */
 
-function renderSharedNav(activePage) {
+async function renderSharedNav(activePage) {
     const navPlaceholder = document.getElementById('shared-nav');
     if (!navPlaceholder) return;
 
+    // Check authenticated user
+    const token = window.api ? window.api.getToken() : localStorage.getItem('sarah_access_token');
+    let currentUser = null;
+    if (token && window.api) {
+        currentUser = await window.api.getCurrentUser();
+    }
+
+    const userName = currentUser ? (currentUser.full_name || currentUser.preferred_name || currentUser.email) : (localStorage.getItem('sarah_user_name') || 'Guest User');
+    const userRole = currentUser ? currentUser.role : (localStorage.getItem('sarah_role') || 'visitor');
+    const householdName = currentUser && currentUser.households && currentUser.households.length > 0 ? currentUser.households[0].name : (localStorage.getItem('sarah_household_name') || 'Home');
+
+    const roleFormatted = userRole.charAt(0).toUpperCase() + userRole.slice(1).replace('_', ' ');
+
     navPlaceholder.innerHTML = `
-        <header class="platform-header">
-            <div class="brand-group">
-                <div class="brand-avatar-mini">👩</div>
+        <header class="platform-header" style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-soft); margin-top: 16px; margin-bottom: 14px;">
+            <div class="brand-group" style="display: flex; align-items: center; gap: 14px;">
+                <div class="brand-avatar-mini" style="font-size: 28px; width: 44px; height: 44px; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center;">👩</div>
                 <div>
-                    <h1 class="brand-title">Sarah</h1>
-                    <span class="brand-subtitle">RN Robots Multi-User Elderly Care</span>
+                    <h1 class="brand-title" style="font-size: 1.45rem; font-weight: 700; color: var(--primary-dark); margin: 0;">Sarah</h1>
+                    <span class="brand-subtitle" style="font-size: 0.85rem; color: var(--text-muted);">RN Robots AI Platform • MySQL Connected</span>
                 </div>
             </div>
 
-            <div class="role-selector-pill">
-                <span class="role-icon">👤</span>
-                <label for="role-switch" class="sr-only">Switch Active Role:</label>
-                <select id="role-switch" class="role-select" aria-label="Switch portal role">
-                    <option value="resident" ${activePage === 'resident' ? 'selected' : ''}>Resident (Margaret)</option>
-                    <option value="family" ${activePage === 'family' ? 'selected' : ''}>Family (Emma - Daughter)</option>
-                    <option value="caregiver" ${activePage === 'caregiver' ? 'selected' : ''}>Caregiver (Nurse Sarah)</option>
-                    <option value="admin" ${activePage === 'admin' ? 'selected' : ''}>Admin (RN Hub Console)</option>
-                </select>
+            <!-- User Status & Logout -->
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="user-pill" style="display: flex; align-items: center; gap: 8px; background: var(--primary-light); padding: 6px 14px; border-radius: 20px; font-size: 0.88rem;">
+                    <span>👤</span>
+                    <strong style="color: var(--primary-dark);">${userName}</strong>
+                    <span style="background: white; border: 1px solid var(--border-color); padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">
+                        ${roleFormatted}
+                    </span>
+                </div>
+                ${token ? `
+                    <button id="btn-logout" class="a11y-btn" style="padding: 6px 14px; border-radius: 8px; background: #fff1f2; color: #e11d48; border: 1px solid #fecdd3; cursor: pointer; font-weight: 600; font-size: 0.85rem;">
+                        🚪 Log Out
+                    </button>
+                ` : `
+                    <a href="/auth/login.html" class="a11y-btn" style="padding: 6px 14px; border-radius: 8px; background: var(--primary); color: white; text-decoration: none; font-weight: 600; font-size: 0.85rem;">
+                        🔐 Log In
+                    </a>
+                `}
             </div>
         </header>
 
-        <nav class="portal-nav" aria-label="Portals Navigation">
+        <!-- Only the 5 required pages in navigation -->
+        <nav class="portal-nav" aria-label="Portals Navigation" style="display: flex; gap: 10px; background: var(--bg-card); padding: 8px 12px; border-radius: var(--radius-md); box-shadow: var(--shadow-soft); margin-bottom: 16px; overflow-x: auto;">
             <a href="/resident/index.html" class="nav-item ${activePage === 'resident' ? 'active' : ''}">
                 <span class="icon">🏡</span>
                 <span class="label">Resident Dashboard</span>
@@ -45,41 +75,24 @@ function renderSharedNav(activePage) {
                 <span class="icon">⚙️</span>
                 <span class="label">Admin Console</span>
             </a>
-            <a href="/index.html" class="nav-item ${activePage === 'voice' ? 'active' : ''}">
-                <span class="icon">🎙️</span>
-                <span class="label">Voice Dev Mode</span>
-            </a>
-            <a href="/zara/index.html" class="nav-item ${activePage === 'zara' ? 'active' : ''}">
-                <span class="icon">⚡</span>
-                <span class="label">Zara Live BIDI</span>
-            </a>
-            <a href="/devices.html" class="nav-item ${activePage === 'devices' ? 'active' : ''}">
-                <span class="icon">🌐</span>
-                <span class="label">Hardware Devices</span>
-            </a>
-            <a href="/auth/login.html" class="nav-item ${activePage === 'login' ? 'active' : ''}">
+            <a href="/auth/login.html" class="nav-item ${activePage === 'login' ? 'active' : ''}" id="nav-login-tab">
                 <span class="icon">🔐</span>
-                <span class="label">Log In</span>
+                <span class="label">${token ? 'Account' : 'Log In'}</span>
             </a>
         </nav>
         <div id="a11y-container"></div>
     `;
 
-    // Role switcher event
-    const switchEl = document.getElementById('role-switch');
-    if (switchEl) {
-        switchEl.addEventListener('change', (e) => {
-            const chosen = e.target.value;
+    // Logout button handler
+    const logoutBtn = document.getElementById('btn-logout');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
             if (window.api) {
-                if (chosen === 'resident') window.api.setContext('user_margaret', 'resident', 'household_margaret');
-                if (chosen === 'family') window.api.setContext('user_emma', 'family', 'household_margaret');
-                if (chosen === 'caregiver') window.api.setContext('user_carer_sarah', 'caregiver', 'household_margaret');
-                if (chosen === 'admin') window.api.setContext('user_admin', 'admin', 'household_margaret');
+                window.api.logout();
+            } else {
+                localStorage.clear();
+                window.location.href = '/auth/login.html';
             }
-            if (chosen === 'resident') window.location.href = '/resident/index.html';
-            else if (chosen === 'family') window.location.href = '/family/index.html';
-            else if (chosen === 'caregiver') window.location.href = '/caregiver/index.html';
-            else if (chosen === 'admin') window.location.href = '/admin/index.html';
         });
     }
 
