@@ -469,15 +469,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             ttsAudioEl = null;
         }
         ttsAudioEl = new Audio(audioUrl);
+        ttsAudioEl.crossOrigin = "anonymous";
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         let actx = null;
         let analyser = null;
 
         try {
             actx = new AudioCtx();
+            if (actx.state === 'suspended') actx.resume();
             const src = actx.createMediaElementSource(ttsAudioEl);
             analyser = actx.createAnalyser();
             analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.2;
             src.connect(analyser);
             analyser.connect(actx.destination);
         } catch (e) {
