@@ -58,6 +58,7 @@ async def update_recurrence_endpoint(reminder_id: str, payload: UpdateRecurrence
     return res
 
 
+@router.get("")
 @router.get("/")
 async def list_reminders_endpoint(session_id: Optional[str] = None):
     """List active scheduled reminders."""

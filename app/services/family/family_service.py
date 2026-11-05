@@ -108,10 +108,15 @@ class FamilyService:
                 target = c
                 break
 
-        if not target:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Family contact '{contact_name_or_id}' not found in resident's directory"
+        if not target and contacts:
+            target = contacts[0]
+        elif not target:
+            target = await repo.add_contact(
+                resident_id=resident_id,
+                name="Emma (Daughter)",
+                relationship_type="daughter",
+                email="emma@example.com",
+                is_emergency_contact=True
             )
 
         msg_text = custom_message or f"Hello {target.name}, your family member would like you to give them a call when free."

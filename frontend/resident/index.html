@@ -128,7 +128,7 @@
 
                 <div style="margin-top: 14px; display: flex; gap: 8px;">
                     <input type="text" id="manual-text-input" class="form-input" placeholder="Or type a question/command to Sarah (e.g. 'play a song', 'turn on lights')..." style="flex: 1; padding: 10px 14px; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.95rem;" />
-                    <button id="manual-send-btn" class="a11y-btn" style="background: var(--primary); color: white; padding: 10px 18px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Send</button>
+                    <button id="manual-send-btn" type="button" onclick="window.handleManualSend && window.handleManualSend()" class="a11y-btn" style="background: var(--primary); color: white; padding: 10px 18px; border: none; border-radius: 8px; font-weight: 600; cursor: pointer;">Send</button>
                 </div>
             </div>
         </div>
@@ -166,11 +166,11 @@
     </div>
 
     <!-- Scripts with Cache Busting -->
-    <script src="/avatar/sarah_avatar.js?v=20261105_photo_v5"></script>
-    <script src="/tts.js?v=20261105_photo_v5"></script>
-    <script src="/services/api.js?v=20261105_photo_v5"></script>
-    <script src="/components/accessibility.js?v=20261105_photo_v5"></script>
-    <script src="/shared/nav.js?v=20261105_photo_v5"></script>
-    <script src="resident.js?v=20261105_photo_v5"></script>
+    <script src="/avatar/sarah_avatar.js?v=20261105_real_v6"></script>
+    <script src="/tts.js?v=20261105_real_v6"></script>
+    <script src="/services/api.js?v=20261105_real_v6"></script>
+    <script src="/components/accessibility.js?v=20261105_real_v6"></script>
+    <script src="/shared/nav.js?v=20261105_real_v6"></script>
+    <script src="/resident/resident.js?v=20261105_real_v6"></script>
 </body>
 </html>

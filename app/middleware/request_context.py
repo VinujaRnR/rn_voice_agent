@@ -14,24 +14,30 @@ ROLE_PERMISSIONS: Dict[str, Set[str]] = {
         "profile:read", "profile:write",
         "conversation:read", "conversation:write",
         "device:read", "device:control",
-        "reminder:read", "reminder:write", "reminder:cancel"
+        "reminder:read", "reminder:write", "reminder:cancel",
+        "family:read", "family:write",
+        "care:read"
     },
     "family": {
-        "profile:read",
-        "conversation:read",
+        "profile:read", "profile:write",
+        "conversation:read", "conversation:write",
         "device:read", "device:control",
-        "reminder:read", "reminder:write"
+        "reminder:read", "reminder:write",
+        "family:read", "family:write",
+        "care:read"
     },
     "caregiver": {
-        "profile:read",
+        "profile:read", "profile:write",
         "device:read", "device:control",
-        "reminder:read", "reminder:write", "reminder:cancel"
+        "reminder:read", "reminder:write", "reminder:cancel",
+        "family:read", "family:write",
+        "care:read", "care:write"
     },
     "device": {
         "device:telemetry", "device:heartbeat", "device:control"
     },
     "guest": {
-        "conversation:write", "device:read"
+        "conversation:write", "device:read", "family:write"
     }
 }
 

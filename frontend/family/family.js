@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const msgForm = document.getElementById('family-msg-form');
     const msgInput = document.getElementById('family-message');
+    const senderInput = document.getElementById('sender-name');
     const feedback = document.getElementById('note-sent-feedback');
 
     if (msgForm) {
@@ -16,8 +17,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const msg = msgInput.value.trim();
             if (!msg) return;
 
+            const sender = senderInput ? (senderInput.value || 'Emma') : 'Emma';
             try {
-                await api.sendFamilyContactRequest('Family Contact', msg);
+                await api.sendFamilyContactRequest(sender, msg);
                 if (feedback) feedback.style.display = 'inline';
                 msgInput.value = '';
                 setTimeout(() => {

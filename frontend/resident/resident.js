@@ -981,16 +981,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     const textInput = document.getElementById('manual-text-input');
     const sendBtn = document.getElementById('manual-send-btn');
     async function handleManualSend() {
-        const text = textInput.value.trim();
+        const text = textInput ? textInput.value.trim() : '';
         if (!text) return;
-        textInput.value = '';
+        if (textInput) textInput.value = '';
         wakeSarah();
         resetSilenceTimer();
+
+        // If in Google ADK Live BIDI Mode with active WebSocket, push message to queue
+        if (engineMode === 'live_adk' && isLiveActive && liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+            appendConversationMsg(displayName || 'Resident', text);
+            avatar.setState('thinking', `"${text}"`);
+            liveSocket.send(JSON.stringify({ type: 'text', text: text }));
+            return;
+        }
+
         await processUserVoiceQuery(text);
     }
+    window.handleManualSend = handleManualSend;
 
-    sendBtn.addEventListener('click', handleManualSend);
-    textInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') handleManualSend();
-    });
+    if (sendBtn) sendBtn.addEventListener('click', handleManualSend);
+    if (textInput) {
+        textInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleManualSend();
+            }
+        });
+    }
 });
