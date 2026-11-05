@@ -27,6 +27,10 @@ class SarahAvatar {
         
         this.animFrameId = null;
         this.time = 0;
+
+        // Offscreen cached lower lip/chin patch for ultra-smooth 60fps zero-delay rendering
+        this.lowerLipCanvas = document.createElement('canvas');
+        this.lowerLipCtx = this.lowerLipCanvas.getContext('2d');
         
         // Load photorealistic avatar portrait
         const domImg = document.getElementById('sarah-photo-source');
@@ -34,7 +38,7 @@ class SarahAvatar {
             this.photo = domImg;
         } else {
             this.photo = new Image();
-            this.photo.src = '/avatar/sarah_photo.jpg?v=20261105_photo_v5';
+            this.photo.src = '/avatar/sarah_photo.jpg?v=20261105_real_v7';
         }
 
         this.isPhotoLoaded = false;
@@ -51,20 +55,20 @@ class SarahAvatar {
                 console.error('Failed to load Sarah photo:', e);
             });
             if (!this.photo.src || !this.photo.src.includes('sarah_photo.jpg')) {
-                this.photo.src = '/avatar/sarah_photo.jpg?v=20261105_photo_v5';
+                this.photo.src = '/avatar/sarah_photo.jpg?v=20261105_real_v7';
             }
         }
-
-        // Offscreen cached lower lip/chin patch for ultra-smooth 60fps zero-delay rendering
-        this.lowerLipCanvas = document.createElement('canvas');
-        this.lowerLipCtx = this.lowerLipCanvas.getContext('2d');
         
         this._bindEvents();
         this.start();
     }
 
     _prepareOffscreenAssets() {
-        if (!this.isPhotoLoaded) return;
+        if (!this.isPhotoLoaded || !this.photo || !this.photo.naturalWidth) return;
+        if (!this.lowerLipCanvas) {
+            this.lowerLipCanvas = document.createElement('canvas');
+            this.lowerLipCtx = this.lowerLipCanvas.getContext('2d');
+        }
         // The lower lip & chin patch in source coordinates (1024x1024):
         // x: 390 to 635 (w: 245), y: 618 to 800 (h: 182)
         const sx = 390;
