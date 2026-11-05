@@ -239,8 +239,19 @@ body {
     background: linear-gradient(180deg, #ffffff 0%, var(--primary-light) 100%);
 }
 
+.sarah-avatar-wrapper {
+    position: relative;
+    width: 340px;
+    height: 340px;
+    max-width: 100%;
+    border-radius: 50%;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+    background: url('/avatar/sarah_photo.jpg?v=20261105_photo_v5') center/cover no-repeat;
+}
+
 #sarah-canvas {
-    border-radius: 20px;
+    border-radius: 50%;
     background: transparent;
     max-width: 100%;
 }

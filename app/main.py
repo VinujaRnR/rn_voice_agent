@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from app.api.chat import router as chat_router
 from app.api.stt import router as stt_router
@@ -50,6 +50,20 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if (
+        path.startswith(("/resident", "/avatar", "/shared", "/components", "/services", "/family", "/care", "/admin", "/auth"))
+        or path.endswith((".html", ".js", ".css", ".jpg", ".png", ".svg", ".json"))
+        or path in ("/", "")
+    ):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 # Register API Routers
 app.include_router(chat_router)

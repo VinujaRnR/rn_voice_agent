@@ -29,13 +29,31 @@ class SarahAvatar {
         this.time = 0;
         
         // Load photorealistic avatar portrait
-        this.photo = new Image();
+        const domImg = document.getElementById('sarah-photo-source');
+        if (domImg) {
+            this.photo = domImg;
+        } else {
+            this.photo = new Image();
+            this.photo.src = '/avatar/sarah_photo.jpg?v=20261105_photo_v5';
+        }
+
         this.isPhotoLoaded = false;
-        this.photo.src = '/avatar/sarah_photo.jpg';
-        this.photo.onload = () => {
+        const onPhotoReady = () => {
             this.isPhotoLoaded = true;
             this._prepareOffscreenAssets();
         };
+
+        if (this.photo.complete && this.photo.naturalWidth > 0) {
+            onPhotoReady();
+        } else {
+            this.photo.addEventListener('load', onPhotoReady);
+            this.photo.addEventListener('error', (e) => {
+                console.error('Failed to load Sarah photo:', e);
+            });
+            if (!this.photo.src || !this.photo.src.includes('sarah_photo.jpg')) {
+                this.photo.src = '/avatar/sarah_photo.jpg?v=20261105_photo_v5';
+            }
+        }
 
         // Offscreen cached lower lip/chin patch for ultra-smooth 60fps zero-delay rendering
         this.lowerLipCanvas = document.createElement('canvas');
@@ -175,18 +193,8 @@ class SarahAvatar {
         ctx.fill();
         ctx.restore();
 
-        // If photo isn't loaded yet, show gentle animated placeholder
+        // If photo assets aren't decoded yet, allow underlying <img> to display naturally
         if (!this.isPhotoLoaded) {
-            ctx.save();
-            ctx.fillStyle = '#f3f4f6';
-            ctx.beginPath();
-            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#9ca3af';
-            ctx.font = '500 14px system-ui';
-            ctx.textAlign = 'center';
-            ctx.fillText('Loading Sarah...', cx, cy);
-            ctx.restore();
             return;
         }
 

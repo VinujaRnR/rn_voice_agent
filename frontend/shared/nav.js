@@ -29,7 +29,7 @@ async function renderSharedNav(activePage) {
     navPlaceholder.innerHTML = `
         <header class="platform-header" style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background: var(--bg-card); border-radius: var(--radius-lg); box-shadow: var(--shadow-soft); margin-top: 16px; margin-bottom: 14px;">
             <div class="brand-group" style="display: flex; align-items: center; gap: 14px;">
-                <div class="brand-avatar-mini" style="font-size: 28px; width: 44px; height: 44px; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center;">👩</div>
+                <img src="/avatar/sarah_photo.jpg?v=20261105_photo_v5" alt="Sarah Voice AI" style="width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,0.12);" />
                 <div>
                     <h1 class="brand-title" style="font-size: 1.45rem; font-weight: 700; color: var(--primary-dark); margin: 0;">Sarah</h1>
                     <span class="brand-subtitle" style="font-size: 0.85rem; color: var(--text-muted);">RN Robots AI Platform • MySQL Connected</span>
