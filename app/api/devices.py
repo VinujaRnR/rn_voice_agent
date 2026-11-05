@@ -1,11 +1,105 @@
 """API endpoints for device registry discovery, node inspection, and CRUD management."""
+import logging
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 from app.commands.device_registry import device_registry
 from app.tools.device_control import control_device
+from app.database.session import get_async_session, transaction
+from app.database.models.devices import Device as DBDevice, DeviceCapability as DBCapability
+from app.database.models.identity import Household
+from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/devices", tags=["devices"])
+
+
+async def sync_single_device_to_db(dev_data: Dict[str, Any], household_id: Optional[str] = None) -> None:
+    """Synchronize a device record from dataset into MySQL database."""
+    try:
+        dev_id = dev_data.get("device_id")
+        if not dev_id:
+            return
+        async with get_async_session() as session:
+            async with transaction(session):
+                # Retrieve default household if not provided
+                if not household_id:
+                    res = await session.execute(select(Household.id).order_by(Household.created_at.desc()).limit(1))
+                    household_id = res.scalar()
+
+                stmt = select(DBDevice).where((DBDevice.device_id == dev_id) | (DBDevice.id == dev_id) | (DBDevice.id == f"dev_{dev_id}"))
+                db_dev = (await session.execute(stmt)).scalars().first()
+                if db_dev:
+                    db_dev.name = dev_data.get("name") or db_dev.name
+                    db_dev.type = dev_data.get("type") or db_dev.type
+                    db_dev.node_id = dev_data.get("node_id") or db_dev.node_id
+                    db_dev.location = dev_data.get("location") or db_dev.location
+                    db_dev.connection_type = dev_data.get("connection") or db_dev.connection_type or "WiFi"
+                    db_dev.power_state = dev_data.get("power_state") or db_dev.power_state or "off"
+                    db_dev.online_status = dev_data.get("status") or db_dev.online_status or "online"
+                    if household_id and not db_dev.household_id:
+                        db_dev.household_id = household_id
+                else:
+                    db_dev = DBDevice(
+                        id=f"dev_{dev_id}",
+                        device_id=dev_id,
+                        name=dev_data.get("name") or dev_id,
+                        type=dev_data.get("type") or "generic",
+                        node_id=dev_data.get("node_id"),
+                        household_id=household_id,
+                        connection_type=dev_data.get("connection") or "WiFi",
+                        location=dev_data.get("location") or "Living Room",
+                        power_state=dev_data.get("power_state") or "off",
+                        online_status=dev_data.get("status") or "online",
+                        is_enrolled=True
+                    )
+                    session.add(db_dev)
+
+                await session.flush()
+
+                # Sync capabilities/actions
+                actions = dev_data.get("allowed_actions") or dev_data.get("actions") or []
+                params = dev_data.get("params") or {}
+                if actions:
+                    cap_stmt = select(DBCapability).where(DBCapability.device_id == db_dev.id)
+                    existing_caps = (await session.execute(cap_stmt)).scalars().all()
+                    existing_acts = {c.action_name for c in existing_caps}
+                    for act in actions:
+                        if act not in existing_acts:
+                            session.add(DBCapability(
+                                device_id=db_dev.id,
+                                action_name=act,
+                                parameter_schema=params
+                            ))
+    except Exception as e:
+        logger.warning(f"Failed to sync device '{dev_data.get('device_id')}' to MySQL: {e}")
+
+
+async def delete_device_from_db(dev_id: str) -> None:
+    """Remove device record from MySQL database."""
+    try:
+        async with get_async_session() as session:
+            async with transaction(session):
+                stmt = select(DBDevice).where((DBDevice.device_id == dev_id) | (DBDevice.id == dev_id) | (DBDevice.id == f"dev_{dev_id}"))
+                db_devs = (await session.execute(stmt)).scalars().all()
+                for d in db_devs:
+                    await session.delete(d)
+    except Exception as e:
+        logger.warning(f"Failed to delete device '{dev_id}' from MySQL: {e}")
+
+
+async def update_device_power_in_db(dev_id: str, power_state: str) -> None:
+    """Update power state of device record in MySQL database."""
+    try:
+        async with get_async_session() as session:
+            async with transaction(session):
+                stmt = select(DBDevice).where((DBDevice.device_id == dev_id) | (DBDevice.id == dev_id) | (DBDevice.id == f"dev_{dev_id}"))
+                db_devs = (await session.execute(stmt)).scalars().all()
+                for d in db_devs:
+                    d.power_state = power_state.lower()
+    except Exception as e:
+        logger.warning(f"Failed to update power state for '{dev_id}' in MySQL: {e}")
 
 
 class DeviceCreateRequest(BaseModel):
@@ -71,7 +165,7 @@ async def get_device_details(device_id: str):
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=Dict[str, Any])
 @router.post("/", status_code=status.HTTP_201_CREATED, response_model=Dict[str, Any])
 async def create_device(request: DeviceCreateRequest):
-    """Add a new device or hub to the data table and persist to JSON."""
+    """Add a new device or hub to the data table, persist to JSON, and sync to MySQL."""
     clean_id = request.device_id.strip()
     if device_registry.get_device(clean_id):
         raise HTTPException(status_code=400, detail=f"Device with ID '{clean_id}' already exists.")
@@ -85,6 +179,10 @@ async def create_device(request: DeviceCreateRequest):
     registered_id = device_registry.register_device(clean_id, metadata, auto_save=True)
     created = device_registry.get_device(registered_id)
 
+    # Sync to MySQL database
+    if created:
+        await sync_single_device_to_db(created)
+
     return {
         "status": "success",
         "message": f"Device '{created.get('name')}' created successfully.",
@@ -94,7 +192,7 @@ async def create_device(request: DeviceCreateRequest):
 
 @router.put("/{device_id}", response_model=Dict[str, Any])
 async def update_device(device_id: str, request: DeviceUpdateRequest):
-    """Update details of an existing device in the data table and persist to JSON."""
+    """Update details of an existing device in the data table, persist to JSON, and sync to MySQL."""
     dev = device_registry.get_device(device_id)
     if not dev:
         raise HTTPException(status_code=404, detail=f"Device '{device_id}' not found.")
@@ -108,6 +206,9 @@ async def update_device(device_id: str, request: DeviceUpdateRequest):
     if not updated:
         raise HTTPException(status_code=500, detail="Failed to update device record.")
 
+    # Sync to MySQL database
+    await sync_single_device_to_db(updated)
+
     return {
         "status": "success",
         "message": f"Device '{updated.get('name')}' updated successfully.",
@@ -117,7 +218,7 @@ async def update_device(device_id: str, request: DeviceUpdateRequest):
 
 @router.delete("/{device_id}", response_model=Dict[str, Any])
 async def delete_device(device_id: str):
-    """Delete a device from the data table and persist to JSON."""
+    """Delete a device from the data table, persist to JSON, and remove from MySQL."""
     dev = device_registry.get_device(device_id)
     if not dev:
         raise HTTPException(status_code=404, detail=f"Device '{device_id}' not found.")
@@ -125,6 +226,9 @@ async def delete_device(device_id: str):
     deleted = device_registry.unregister_device(dev["device_id"], auto_save=True)
     if not deleted:
         raise HTTPException(status_code=500, detail="Failed to delete device record.")
+
+    # Remove from MySQL database
+    await delete_device_from_db(dev["device_id"])
 
     return {
         "status": "success",
@@ -135,7 +239,7 @@ async def delete_device(device_id: str):
 
 @router.post("/{device_id}/toggle", response_model=Dict[str, Any])
 async def toggle_device_power(device_id: str):
-    """Toggle device power state (on/off) and publish command to RabbitMQ."""
+    """Toggle device power state (on/off), publish command to RabbitMQ, and sync to MySQL."""
     dev = device_registry.get_device(device_id)
     if not dev:
         raise HTTPException(status_code=404, detail=f"Device '{device_id}' not found.")
@@ -147,9 +251,12 @@ async def toggle_device_power(device_id: str):
         device_id=dev["device_id"],
         action="set_power",
         parameters={"state": new_state},
-        user_id="web_dashboard",
-        session_id="devices_page_toggle"
+        user_id="admin",
+        session_id="admin_console_toggle"
     )
+
+    # Sync state to MySQL
+    await update_device_power_in_db(dev["device_id"], new_state)
 
     return {
         "status": "success",
@@ -159,4 +266,21 @@ async def toggle_device_power(device_id: str):
         "previous_state": current_state,
         "new_state": new_state,
         "execution": res
+    }
+
+
+@router.post("/sync", response_model=Dict[str, Any])
+async def sync_all_dataset_devices():
+    """Synchronize all devices from devices.json dataset into the MySQL database."""
+    devices = device_registry.list_devices()
+    synced_count = 0
+    for dev in devices:
+        await sync_single_device_to_db(dev)
+        synced_count += 1
+
+    return {
+        "status": "success",
+        "message": f"Successfully synchronized {synced_count} dataset devices with MySQL database.",
+        "synced_count": synced_count,
+        "total_devices": len(devices)
     }

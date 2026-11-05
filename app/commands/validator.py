@@ -61,7 +61,9 @@ class CommandValidator:
         "user_01",
         "authorized_user",
         "default_user",
-        "sarah_operator"
+        "sarah_operator",
+        "web_dashboard",
+        "admin_console"
     }
 
     UNAUTHORIZED_USERS: Set[str] = {

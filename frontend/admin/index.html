@@ -5,115 +5,271 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sarah — Admin Console & Device Management</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/shared/portal.css">
+    <link rel="stylesheet" href="/shared/portal.css?v=20261105_admin_v1">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="portal-container">
         <!-- Shared Header & Nav -->
         <div id="shared-nav"></div>
 
-        <div class="dashboard-grid">
-            <!-- Left: Register New IoT Device -->
-            <div class="card">
-                <h2 class="card-title"><span>➕</span> Enroll New Universal IoT Device</h2>
-                <form id="device-enroll-form">
-                    <div class="form-group">
-                        <label class="form-label" for="dev-name">Device Name</label>
-                        <input class="form-input" id="dev-name" placeholder="e.g. Hallway Sensor Light" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="dev-type">Device Type</label>
-                        <select class="form-input" id="dev-type">
-                            <option value="light">Smart Light / Relay</option>
-                            <option value="sensor">Radar / Fall Sensor</option>
-                            <option value="dispenser">Medication Dispenser</option>
-                            <option value="switch">Wall Switch</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="dev-node">Node ID / MAC</label>
-                        <input class="form-input" id="dev-node" placeholder="e.g. 98a316e6b659" required>
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" for="dev-protocol">Protocol</label>
-                        <select class="form-input" id="dev-protocol">
-                            <option value="rabbitmq">RabbitMQ (RN Hub)</option>
-                            <option value="zigbee">Zigbee</option>
-                            <option value="zwave">Z-Wave</option>
-                            <option value="matter">Matter / Thread</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="submit-btn" id="btn-enroll-dev">Register & Authorize Device</button>
-                    <span id="enroll-feedback" style="display: none; margin-left: 12px; color: var(--success); font-weight: 600;">
-                        ✓ Enrolled successfully!
-                    </span>
-                </form>
+        <!-- Live Statistics Row -->
+        <div class="admin-stats-row">
+            <div class="stat-chip">
+                <span class="stat-chip-icon">📟</span>
+                <div>
+                    <div class="stat-chip-val" id="stat-total-devices">0</div>
+                    <div class="stat-chip-lbl">Total Registered Devices</div>
+                </div>
+            </div>
+            <div class="stat-chip">
+                <span class="stat-chip-icon">🟢</span>
+                <div>
+                    <div class="stat-chip-val" id="stat-online-devices">0</div>
+                    <div class="stat-chip-lbl">Online Hardware Nodes</div>
+                </div>
+            </div>
+            <div class="stat-chip">
+                <span class="stat-chip-icon">🖧</span>
+                <div>
+                    <div class="stat-chip-val" id="stat-total-nodes">0</div>
+                    <div class="stat-chip-lbl">Hardware Microcontrollers</div>
+                </div>
+            </div>
+            <div class="stat-chip">
+                <span class="stat-chip-icon">⚡</span>
+                <div>
+                    <div class="stat-chip-val" id="stat-total-sub-devices">0</div>
+                    <div class="stat-chip-lbl">Connected Sub-Devices</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Toolbar & Dataset Operations -->
+        <div class="admin-toolbar">
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn-primary" id="btn-open-add-modal">
+                    <span>➕</span> Add New Device
+                </button>
+                <button type="button" class="btn-sync" id="btn-sync-dataset" title="Sync devices.json dataset with MySQL database">
+                    <span>📥</span> Sync Dataset to MySQL
+                </button>
+
+                <!-- Quick-Fill Template Dropdown -->
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted);">Dataset Presets:</span>
+                    <select id="toolbar-template-select" class="form-select" style="width: auto; padding: 8px 12px; font-size: 0.85rem;">
+                        <option value="">-- Choose Template from Dataset --</option>
+                        <option value="garden_lights">🌿 Garden Pathway Lights (NODE-ESP8266-02)</option>
+                        <option value="farm_lights">🌾 Testing Farm Lights (NODE-ESP8266-01)</option>
+                        <option value="rn_hub">🌐 RN Hub Master Controller (NODE-ESP8266-02)</option>
+                        <option value="smart_plug">🔌 Smart Plug Living Room (NODE-ESP8266-03)</option>
+                        <option value="thermostat">❄️ Master Climate HVAC (NODE-ESP32-01)</option>
+                        <option value="robot_base">🤖 Autonomous Mobile Robot Base (NODE-ROBOT-01)</option>
+                        <option value="arm_manipulator">🦾 Robotic Arm 6-DOF Manipulator (NODE-ARM-01)</option>
+                        <option value="fall_radar">📡 Safety Fall Sensor Radar (NODE-RADAR-01)</option>
+                        <option value="kitchen_lights">💡 Kitchen Pendant Lights (NODE-ZIGBEE-KIT-03)</option>
+                    </select>
+                </div>
             </div>
 
-            <!-- Right: System & Service Telemetry -->
-            <div class="card">
-                <h2 class="card-title"><span>📊</span> System Status & Middleware Telemetry</h2>
+            <!-- Search Field -->
+            <div style="flex: 1; min-width: 260px; max-width: 420px;">
+                <input type="text" id="search-input" class="form-input" placeholder="🔍 Search name, ID/MAC, node, room, alias..." style="padding: 8px 14px; font-size: 0.88rem;">
+            </div>
+        </div>
+
+        <!-- Filter Pills Bar -->
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;">
+            <div class="filter-btn-group" id="filter-pills">
+                <button class="filter-btn active" data-filter="all">All <span class="filter-badge" id="filter-count-all">0</span></button>
+                <button class="filter-btn" data-filter="relay">Relays <span class="filter-badge" id="filter-count-relay">0</span></button>
+                <button class="filter-btn" data-filter="lighting">Lighting <span class="filter-badge" id="filter-count-lighting">0</span></button>
+                <button class="filter-btn" data-filter="hub">Hubs <span class="filter-badge" id="filter-count-hub">0</span></button>
+                <button class="filter-btn" data-filter="smart_plug">Plugs <span class="filter-badge" id="filter-count-plug">0</span></button>
+                <button class="filter-btn" data-filter="climate">Climate <span class="filter-badge" id="filter-count-climate">0</span></button>
+                <button class="filter-btn" data-filter="robot">Robots & Arms <span class="filter-badge" id="filter-count-robot">0</span></button>
+                <button class="filter-btn" data-filter="sensor">Sensors & Radar <span class="filter-badge" id="filter-count-sensor">0</span></button>
+            </div>
+            <span id="devices-match-count" style="font-size: 0.82rem; color: var(--text-muted); font-weight: 500;"></span>
+        </div>
+
+        <!-- Enrolled Household Devices Registry Table -->
+        <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 24px;">
+            <div style="padding: 18px 24px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
+                <h2 class="card-title" style="margin: 0;"><span>🌐</span> Enrolled Universal Devices & Hardware Topologies</h2>
+                <span class="status-pill pill-green" id="sync-status-indicator">MySQL & Dataset Synchronized</span>
+            </div>
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem;">
+                    <thead>
+                        <tr style="border-bottom: 2px solid var(--border-color); background: var(--bg-base);">
+                            <th style="padding: 14px 16px;">Device & Voice Aliases</th>
+                            <th style="padding: 14px 16px;">Device ID / MAC</th>
+                            <th style="padding: 14px 16px;">Hardware Node ID</th>
+                            <th style="padding: 14px 16px;">Type & Location</th>
+                            <th style="padding: 14px 16px;">Actions & Params</th>
+                            <th style="padding: 14px 16px;">Connected Sub-Devices</th>
+                            <th style="padding: 14px 16px;">Power / Status</th>
+                            <th style="padding: 14px 16px; text-align: right;">Controls</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-devices-table">
+                        <tr>
+                            <td colspan="8" style="padding: 30px; text-align: center; color: var(--text-muted);">
+                                Loading hardware devices and node topologies...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Middleware Telemetry & Infrastructure Status -->
+        <div class="card">
+            <h2 class="card-title"><span>📊</span> System Status & Middleware Telemetry</h2>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
                 <ul class="timeline-list">
                     <li class="timeline-item">
                         <div class="item-info">
                             <span class="item-title">MySQL 8.4 Multi-Tenant Storage</span>
-                            <span class="item-sub">Connected • Latency 1.2ms</span>
+                            <span class="item-sub">Connected • Fully synchronized with data/devices.json</span>
                         </div>
                         <span class="status-pill pill-green">Healthy</span>
                     </li>
                     <li class="timeline-item">
                         <div class="item-info">
                             <span class="item-title">Gemini 3.5 Flash-Lite LLM Engine</span>
-                            <span class="item-sub">Tool dispatcher & schema validation active</span>
+                            <span class="item-sub">Voice companion dispatcher & device schema tool calling active</span>
                         </div>
                         <span class="status-pill pill-green">Active</span>
                     </li>
+                </ul>
+                <ul class="timeline-list">
                     <li class="timeline-item">
                         <div class="item-info">
                             <span class="item-title">Edge-TTS (en-US-JennyNeural)</span>
-                            <span class="item-sub">Female voice synthesis pipeline ready</span>
+                            <span class="item-sub">Natural female speech synthesis with zero-delay lip-sync ready</span>
                         </div>
                         <span class="status-pill pill-green">Online</span>
                     </li>
                     <li class="timeline-item">
                         <div class="item-info">
                             <span class="item-title">RabbitMQ IoT Broker</span>
-                            <span class="item-sub">Queue command.rn_relay_action connected</span>
+                            <span class="item-sub">Queue command.rn_relay_action connected for real hardware nodes</span>
                         </div>
                         <span class="status-pill pill-blue">Connected</span>
                     </li>
                 </ul>
             </div>
         </div>
+    </div>
 
-        <!-- Enrolled Universal Devices Table -->
-        <div class="card">
-            <h2 class="card-title"><span>🌐</span> Enrolled Household Devices Registry</h2>
-            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem;">
-                <thead>
-                    <tr style="border-bottom: 2px solid var(--border-color); background: var(--bg-base);">
-                        <th style="padding: 12px;">Device Name</th>
-                        <th style="padding: 12px;">Type</th>
-                        <th style="padding: 12px;">Node ID</th>
-                        <th style="padding: 12px;">Protocol</th>
-                        <th style="padding: 12px;">Status</th>
-                        <th style="padding: 12px;">Action</th>
-                    </tr>
-                </thead>
-                <tbody id="admin-devices-table">
-                    <tr style="border-bottom: 1px solid var(--border-color);">
-                        <td style="padding: 12px; font-weight: 600;">Testing Farm Light</td>
-                        <td style="padding: 12px;">Smart Light</td>
-                        <td style="padding: 12px;"><code>98a316e6b658</code></td>
-                        <td style="padding: 12px;">RabbitMQ</td>
-                        <td style="padding: 12px;"><span class="status-pill pill-green">Online</span></td>
-                        <td style="padding: 12px;"><button class="a11y-btn" onclick="alert('Ping sent.')">Test Ping</button></td>
-                    </tr>
-                </tbody>
-            </table>
+    <!-- Add / Edit Device Modal Overlay -->
+    <div class="modal-overlay" id="device-modal" role="dialog" aria-modal="true" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title" id="modal-title">➕ Add New Device</div>
+                <button type="button" class="modal-close-btn" id="modal-close-btn" aria-label="Close">&times;</button>
+            </div>
+
+            <form id="device-form">
+                <div class="modal-body">
+                    <input type="hidden" id="form-is-edit" value="false">
+
+                    <!-- Template Quick Fill Selector inside Modal -->
+                    <div class="form-group" style="background: rgba(37, 99, 235, 0.05); padding: 12px 14px; border-radius: 8px; border: 1px dashed rgba(37, 99, 235, 0.35);">
+                        <label class="form-label" for="modal-template-select" style="color: var(--primary);">
+                            ⚡ Quick-Fill Details from Dataset Template
+                        </label>
+                        <select id="modal-template-select" class="form-select">
+                            <option value="">-- Choose a Dataset Device Template to Auto-Fill --</option>
+                            <option value="garden_lights">🌿 Garden Pathway Lights (NODE-ESP8266-02 • Relay Controller)</option>
+                            <option value="farm_lights">🌾 Testing Farm Lights (NODE-ESP8266-01 • Lighting System)</option>
+                            <option value="rn_hub">🌐 RN Hub Master Controller (NODE-ESP8266-02 • Gateway)</option>
+                            <option value="smart_plug">🔌 Smart Plug (NODE-ESP8266-03 • Power Switch)</option>
+                            <option value="thermostat">❄️ Climate HVAC Thermostat (NODE-ESP32-01 • Climate)</option>
+                            <option value="robot_base">🤖 Autonomous Mobile Robot Base (NODE-ROBOT-01 • Mobile Base)</option>
+                            <option value="arm_manipulator">🦾 Robotic Arm Manipulator (NODE-ARM-01 • 6-DOF Arm)</option>
+                            <option value="fall_radar">📡 Safety Radar Fall Sensor (NODE-RADAR-01 • mmWave Sensor)</option>
+                        </select>
+                        <span class="form-hint">Populates all 9 fields with accurate hardware specifications from data/devices.json</span>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label class="form-label" for="form-dev-id">Device ID / MAC Address *</label>
+                            <input type="text" id="form-dev-id" class="form-input" placeholder="e.g. 98a316e6b658 or garden_lights" required />
+                            <span class="form-hint">Unique 12-hex MAC or canonical ID</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="form-dev-name">Device Name *</label>
+                            <input type="text" id="form-dev-name" class="form-input" placeholder="e.g. Garden Pathway Lights" required />
+                            <span class="form-hint">Friendly name spoken to assistant</span>
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label class="form-label" for="form-node-id">Hardware Node ID *</label>
+                            <input type="text" id="form-node-id" class="form-input" placeholder="NODE-ESP8266-02" required />
+                            <span class="form-hint">Controller or microcontroller node</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="form-dev-type">Device Type *</label>
+                            <select id="form-dev-type" class="form-select" required>
+                                <option value="Relay">Relay Controller</option>
+                                <option value="lighting">Lighting System</option>
+                                <option value="hub">RN Hub / Gateway</option>
+                                <option value="smart_plug">Smart Plug</option>
+                                <option value="climate">Climate / HVAC</option>
+                                <option value="robot">Mobile Robot</option>
+                                <option value="arm">Robotic Arm</option>
+                                <option value="sensor">Sensor Node</option>
+                                <option value="radar">Radar / Fall Sensor</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="form-location">Room / Location</label>
+                        <input type="text" id="form-location" class="form-input" placeholder="Living Room" />
+                        <span class="form-hint">Zone or physical location for room-based voice queries</span>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label class="form-label" for="form-actions">Predefined Actions (Comma-separated)</label>
+                            <input type="text" id="form-actions" class="form-input" placeholder="set_power, turn_on, turn_off, get_status" />
+                            <span class="form-hint">Supported device command actions</span>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label" for="form-params">Predefined Params (JSON)</label>
+                            <input type="text" id="form-params" class="form-input" placeholder='{"state": "on"}' />
+                            <span class="form-hint">Default/predefined key-value parameters</span>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="form-aliases">Voice Aliases (Comma-separated)</label>
+                        <input type="text" id="form-aliases" class="form-input" placeholder="e.g. garden lights, pathway lights, garden lamp" />
+                        <span class="form-hint">Alternative spoken trigger phrases</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="form-sub-devices">Connected Sub-Devices (JSON format or line-separated)</label>
+                        <textarea id="form-sub-devices" class="form-textarea" placeholder='[{"name": "Lamp 1", "channel": "CH1"}, {"name": "Lamp 2", "channel": "CH2"}]'></textarea>
+                        <span class="form-hint">Peripherals, lighting fixtures, or sensor channels wired to this node</span>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn-secondary" id="modal-cancel-btn">Cancel</button>
+                    <button type="submit" class="btn-primary" id="modal-submit-btn">Save Device</button>
+                </div>
+            </form>
         </div>
     </div>
 
